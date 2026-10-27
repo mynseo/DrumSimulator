@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 export type CameraView = 'front' | 'side' | 'top' | 'drummer';
 
@@ -27,6 +28,11 @@ export class Stage {
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x0e0f13);
+    // 금속(심벌·크롬)이 비칠 주변 환경. 없으면 보는 각도에 따라 심벌이 검게 보인다
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.35;
+    pmrem.dispose();
     this.scene.fog = new THREE.Fog(0x0e0f13, 6, 14);
 
     this.scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x20160f, 0.9));

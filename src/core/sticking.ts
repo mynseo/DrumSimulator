@@ -1,5 +1,5 @@
 import { INSTRUMENT_INFO, INSTRUMENT_ORDER } from './instruments';
-import type { Hand, Limb, ScoreNote } from './types';
+import type { Hand, Instrument, Limb, ScoreNote } from './types';
 
 /** 한 손으로 연속해서 무리 없이 칠 수 있는 최소 간격(초). 이보다 빠르면 손을 바꾼다. */
 export const MIN_SAME_HAND_GAP = 0.11;
@@ -129,4 +129,27 @@ function cheaperHand(
     return c;
   };
   return cost('R') <= cost('L') ? 'R' : 'L';
+}
+
+/**
+ * 직접 연주용: 들어오는 타격마다 그 자리에서 손발을 고른다.
+ * 미래 음을 모르므로 악보용 assignSticking과 같은 비용 규칙을 한 음씩 적용한다.
+ * 거의 동시에 친 두 음(하이햇+스네어)은 "같은 손 연타가 너무 빠름" 규칙으로 자연히 다른 손이 된다.
+ */
+export class LiveSticking {
+  private state: Record<Hand, HandState> = {
+    R: { time: -Infinity, lateral: INSTRUMENT_INFO.hihatClosed.lateral },
+    L: { time: -Infinity, lateral: INSTRUMENT_INFO.snare.lateral },
+  };
+  private lastSingle: { hand: Hand; time: number } = { hand: 'L', time: -Infinity };
+
+  next(instrument: Instrument, time: number): Limb {
+    const info = INSTRUMENT_INFO[instrument];
+    if (info.kind === 'RF') return 'RF';
+    if (info.kind === 'LF') return 'LF';
+    const hand = cheaperHand({ step: 0, instrument, velocity: 1 }, time, this.state, this.lastSingle);
+    this.state[hand] = { time, lateral: info.lateral };
+    if (!info.timekeeper) this.lastSingle = { hand, time };
+    return handLimb(hand);
+  }
 }

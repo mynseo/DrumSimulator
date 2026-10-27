@@ -12,6 +12,13 @@ export const LIMB_COLORS: Record<Limb, number> = {
 };
 const FEEDBACK_TIME = 0.45;
 
+/** 한 부품이 마지막으로 맞은 정보 (age = 맞은 뒤 지난 초) */
+export interface HitFlash {
+  age: number;
+  limb: Limb | null;
+  velocity: number;
+}
+
 interface Piece {
   id: PieceId;
   group: THREE.Group;
@@ -66,14 +73,25 @@ export class DrumKit {
    * @param kickPress 0 = 쉼, 1 = 비터가 헤드를 친 순간, 음수 = 뒤로 젖힘
    * @param hatClosed 0 = 하이햇 열림, 1 = 닫힘
    */
-  update(timeline: Timeline, t: number, loop: boolean, kickPress: number, hatClosed: number) {
+  update(
+    timeline: Timeline,
+    t: number,
+    loop: boolean,
+    kickPress: number,
+    hatClosed: number,
+    live: Partial<Record<PieceId, HitFlash>> = {},
+  ) {
     for (const id of PIECES) {
       const p = this.pieces[id];
+      // 악보 재생과 직접 연주 중 더 최근에 맞은 것을 보여 준다
       const prev = previousHit(timeline.byPiece[id], t, timeline.duration, loop);
-      const age = prev ? t - prev.time : Infinity;
+      let flash: HitFlash | null = prev ? { age: t - prev.time, limb: prev.hit.limb, velocity: prev.hit.velocity } : null;
+      const l = live[id];
+      if (l && (!flash || l.age < flash.age)) flash = l;
+      const age = flash ? flash.age : Infinity;
       const active = age >= 0 && age < FEEDBACK_TIME;
-      const k = active ? (1 - age / FEEDBACK_TIME) ** 2 * (0.4 + 0.6 * prev!.hit.velocity) : 0;
-      const color = active && prev!.hit.limb ? LIMB_COLORS[prev!.hit.limb] : 0xffffff;
+      const k = active ? (1 - age / FEEDBACK_TIME) ** 2 * (0.4 + 0.6 * flash!.velocity) : 0;
+      const color = active && flash!.limb ? LIMB_COLORS[flash!.limb] : 0xffffff;
       for (const m of p.glow) {
         m.emissive.setHex(color);
         m.emissiveIntensity = k * 1.6;
@@ -86,9 +104,11 @@ export class DrumKit {
       p.ring.scale.set(s, s, s);
 
       if (p.cymbal) {
-        const amp = active || age < 1.5 ? Math.exp(-age * 3.5) * 0.09 * (prev?.hit.velocity ?? 0) : 0;
-        p.wobble.rotation.x = Math.sin(age * 22) * amp;
-        p.wobble.rotation.z = Math.cos(age * 17) * amp * 0.6;
+        // 한 번도 안 맞은 심벌은 age가 Infinity: sin(Infinity)는 NaN이므로 따로 처리한다
+        const ringing = age >= 0 && age < 1.5;
+        const amp = ringing ? Math.exp(-age * 3.5) * 0.09 * flash!.velocity : 0;
+        p.wobble.rotation.x = ringing ? Math.sin(age * 22) * amp : 0;
+        p.wobble.rotation.z = ringing ? Math.cos(age * 17) * amp * 0.6 : 0;
       } else if (id !== 'kick') {
         p.wobble.position.y = active ? -Math.sin(Math.min(1, age / 0.06) * Math.PI) * 0.006 : 0;
       }

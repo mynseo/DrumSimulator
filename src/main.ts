@@ -10,10 +10,15 @@ import { parseDrumTab } from './import/tab';
 import { MotionPlanner } from './motion/MotionPlanner';
 import { DrumKit } from './scene/DrumKit';
 import { Stage, type CameraView } from './scene/Stage';
+import { LiveSticking } from './core/sticking';
+import type { Instrument } from './core/types';
+import { LiveMotion } from './motion/LiveMotion';
 import { Editor } from './ui/Editor';
+import { instrumentForKey, Pads } from './ui/Pads';
 
 const STORAGE_KEY = 'drumsim.score.v1';
 const CHARACTER_KEY = 'drumsim.character';
+const PANEL_KEY = 'drumsim.panel';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -43,6 +48,9 @@ stage.scene.add(kit.root);
 const planner = new MotionPlanner(kit);
 const transport = new Transport(timeline);
 const editor = new Editor($('editor'), score);
+const pads = new Pads($('pads'));
+const liveMotion = new LiveMotion(kit);
+const liveSticking = new LiveSticking();
 
 let rig: DrummerRig | null = null;
 function setCharacter(id: string) {
@@ -103,6 +111,7 @@ async function togglePlay() {
 playBtn.addEventListener('click', togglePlay);
 $('stop').addEventListener('click', () => {
   transport.stop();
+  pads.resetFollow();
   updatePlayButton();
 });
 transport.onEnded = updatePlayButton;
@@ -204,15 +213,85 @@ $('export').addEventListener('click', async () => {
   URL.revokeObjectURL(a.href);
 });
 
+/** 글자를 입력하는 칸에서는 키보드 연주를 하지 않는다 (체크박스 등은 괜찮다) */
+function isTyping(target: EventTarget | null): boolean {
+  if (target instanceof HTMLTextAreaElement) return true;
+  return target instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'range'].includes(target.type);
+}
+
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'Space' || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if (isTyping(e.target)) return;
+  if (tabDialog.open || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    togglePlay();
+    return;
+  }
+  const instrument = instrumentForKey(e.code);
+  if (!instrument) return;
   e.preventDefault();
-  togglePlay();
+  if (!e.repeat) liveHit(instrument, e.shiftKey ? 1 : 0.8);
 });
+
+// 브라우저는 사용자 입력 뒤에만 소리를 허락한다. 휴대폰은 첫 터치를 뗄 때 오디오를 깨워 둔다
+for (const type of ['pointerup', 'touchend', 'keydown'] as const) {
+  window.addEventListener(type, () => transport.unlock(), { passive: true });
+}
+
+// ---- 직접 연주 ----
+const recInput = $<HTMLInputElement>('rec');
+
+function liveHit(instrument: Instrument, velocity: number) {
+  const now = performance.now() / 1000;
+  const limb = liveSticking.next(instrument, now);
+  transport.playNow(instrument, velocity);
+  liveMotion.hit(limb, instrument, now, velocity);
+  pads.flash(instrument, limb);
+  if (recInput.checked && transport.playing) record(instrument, velocity);
+}
+pads.onHit = liveHit;
+
+/** 재생 중 친 음을 가장 가까운 칸에 넣는다 */
+function record(instrument: Instrument, velocity: number) {
+  const step = Math.round(transport.heardPosition / timeline.stepDuration) % timeline.totalSteps;
+  const existing = score.notes.find((n) => n.step === step && n.instrument === instrument);
+  if (existing) existing.velocity = Math.max(existing.velocity, velocity);
+  else score.notes.push({ step, instrument, velocity });
+  scoreChanged();
+  editor.refresh();
+}
+
+recInput.addEventListener('change', () => {
+  if (recInput.checked && !transport.playing) {
+    togglePlay();
+    toast('녹음 중: 반복 재생에 맞춰 치면 악보에 들어갑니다');
+  }
+});
+
+// ---- 아래 패널: 악보 / 드럼 패드 ----
+const panel = $('editor-wrap');
+function showPanel(name: 'score' | 'pads') {
+  panel.dataset.panel = name;
+  $('editor').hidden = name !== 'score';
+  $('pads').hidden = name !== 'pads';
+  panel.querySelectorAll<HTMLElement>('[data-for]').forEach((el) => (el.hidden = el.dataset.for !== name));
+  panel.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.panel === name)));
+  try {
+    localStorage.setItem(PANEL_KEY, name);
+  } catch {
+    /* 저장 불가 환경 */
+  }
+}
+panel.querySelectorAll<HTMLButtonElement>('.tabs [data-panel]').forEach((b) =>
+  b.addEventListener('click', () => showPanel(b.dataset.panel as 'score' | 'pads')),
+);
 
 // ---- 편집기 ----
 editor.onChange = () => scoreChanged();
-editor.onSeek = (step) => transport.seek(step * timeline.stepDuration);
+editor.onSeek = (step) => {
+  transport.seek(step * timeline.stepDuration);
+  pads.resetFollow();
+};
 
 // ---- 매 프레임: 재생 위치 하나로 소리·드러머·피드백·편집기를 맞춘다 ----
 const positionEl = $('position');
@@ -223,9 +302,13 @@ function frame(now: number) {
   const t = transport.position;
   const loop = transport.loop;
 
+  const live = performance.now() / 1000;
+
   const pose = planner.compute(timeline, t, loop);
+  liveMotion.apply(pose, live, planner.kickPressValue, planner.hatClosedValue, transport.playing);
   rig?.apply(pose);
-  kit.update(timeline, t, loop, planner.kickPressValue, planner.hatClosedValue);
+  kit.update(timeline, t, loop, liveMotion.kickPress, liveMotion.hatClosed, liveMotion.flashAges(live));
+  if (transport.playing) pads.followScore(timeline, t, loop);
 
   const step = Math.min(timeline.totalSteps - 1, Math.floor(t / timeline.stepDuration + 1e-6));
   editor.setPlayhead(transport.playing || t > 0 ? step : -1);
@@ -284,6 +367,14 @@ try {
 }
 characterSelect.value = CHARACTERS.some((c) => c.id === savedCharacter) ? savedCharacter! : CHARACTERS[0].id;
 setCharacter(characterSelect.value);
+let savedPanel: string | null = null;
+try {
+  savedPanel = localStorage.getItem(PANEL_KEY);
+} catch {
+  /* 저장 불가 환경 */
+}
+// 휴대폰·태블릿은 처음에 드럼 패드를 보여 준다
+showPanel(savedPanel === 'score' || savedPanel === 'pads' ? savedPanel : matchMedia('(pointer: coarse)').matches ? 'pads' : 'score');
 editor.render();
 scoreChanged();
 requestAnimationFrame(frame);

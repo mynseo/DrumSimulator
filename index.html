@@ -60,8 +60,17 @@
         </div>
       </div>
       <section id="editor-wrap">
-        <div class="hint">클릭: 음 추가 → 악센트 → 고스트 → 삭제 · 우클릭/길게 누르기: 손 지정(자동 → R → L) · 머리줄 클릭: 그 위치로 이동 · Space: 재생/정지</div>
+        <div class="panel-bar">
+          <div class="tabs" role="tablist">
+            <button id="tab-score" role="tab" data-panel="score" aria-selected="true">악보</button>
+            <button id="tab-pads" role="tab" data-panel="pads" aria-selected="false">드럼 패드</button>
+          </div>
+          <div class="hint" data-for="score">클릭: 음 추가 → 악센트 → 고스트 → 삭제 · 우클릭/길게 누르기: 손 지정(자동 → R → L) · 머리줄 클릭: 그 위치로 이동 · Space: 재생/정지</div>
+          <div class="hint" data-for="pads" hidden><span class="kbd-only">패드를 클릭하거나 키보드로 연주하세요 · Shift+키: 악센트 · </span>가운데를 칠수록 세게</div>
+          <label class="check rec" data-for="pads" hidden title="재생 중에 친 음을 가장 가까운 칸에 맞춰 악보에 넣습니다"><input id="rec" type="checkbox" /> ● 녹음</label>
+        </div>
         <div id="editor"></div>
+        <div id="pads" hidden></div>
       </section>
     </main>
 

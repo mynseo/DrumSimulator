@@ -1,0 +1,51 @@
+import * as THREE from 'three';
+import { describe, expect, it } from 'vitest';
+import { PRESETS } from '../src/core/presets';
+import { buildTimeline } from '../src/core/timeline';
+import { LiveMotion } from '../src/motion/LiveMotion';
+import { MotionPlanner } from '../src/motion/MotionPlanner';
+import type { DrummerPose } from '../src/motion/pose';
+import { DrumKit } from '../src/scene/DrumKit';
+
+const finite = (v: THREE.Vector3) => [v.x, v.y, v.z].every(Number.isFinite);
+const poseFinite = (p: DrummerPose) => finite(p.RH.tip) && finite(p.LH.tip) && finite(p.lookAt) && Number.isFinite(p.RF.angle) && Number.isFinite(p.LF.angle);
+
+describe('드러머 자세', () => {
+  it('모든 예제(빈 악보 포함)에서 드럼 피드백을 거쳐도 자세가 유효한 숫자다', () => {
+    for (const preset of PRESETS) {
+      const kit = new DrumKit();
+      const planner = new MotionPlanner(kit);
+      const tl = buildTimeline(preset.score);
+      for (let t = 0; t < tl.duration; t += 0.05) {
+        const pose = planner.compute(tl, t, true);
+        kit.update(tl, t, true, planner.kickPressValue, planner.hatClosedValue);
+        expect(poseFinite(pose), `${preset.name} t=${t.toFixed(2)}`).toBe(true);
+      }
+    }
+  });
+
+  it('타격 순간 스틱 끝이 해당 드럼의 타격 지점에 닿는다', () => {
+    const kit = new DrumKit();
+    const planner = new MotionPlanner(kit);
+    const tl = buildTimeline(PRESETS[1].score);
+    for (const h of tl.byLimb.RH.slice(0, 20)) {
+      const pose = planner.compute(tl, h.time, true);
+      expect(pose.RH.lift).toBeCloseTo(0, 5);
+      expect(pose.RH.tip.distanceTo(kit.strikePoint(h.piece))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('직접 연주: 친 직후 스틱이 그 드럼에 닿고, 잠시 뒤 원래 자세로 돌아간다', () => {
+    const kit = new DrumKit();
+    const planner = new MotionPlanner(kit);
+    const live = new LiveMotion(kit);
+    const tl = buildTimeline(PRESETS[4].score);
+    live.apply(planner.compute(tl, 0, true), 0.9, 0, 1, false);
+    live.hit('RH', 'floorTom', 1, 0.8);
+    const atHit = live.apply(planner.compute(tl, 0, true), 1.05, 0, 1, false);
+    expect(atHit.RH.strike.distanceTo(kit.strikePoint('floorTom'))).toBeLessThan(1e-6);
+    const later = live.apply(planner.compute(tl, 0, true), 2, 0, 1, false);
+    expect(later.RH.strike.distanceTo(kit.strikePoint('floorTom'))).toBeGreaterThan(0.1);
+    expect(poseFinite(later)).toBe(true);
+  });
+});

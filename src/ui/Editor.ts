@@ -138,6 +138,11 @@ export class Editor {
     this.onChange?.();
   }
 
+  /** 악보가 밖에서(녹음 등) 바뀌었을 때 칸 표시만 새로 고친다 */
+  refresh() {
+    this.refreshCells();
+  }
+
   private refreshCells() {
     for (const el of this.cells.values()) el.classList.remove('on', 'accent', 'ghost');
     for (const n of this.score.notes) {

@@ -70,7 +70,62 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .legend .rf { background: var(--rf); } .legend .lf { background: var(--lf); }
 
 #editor-wrap { height: 300px; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line); }
-.hint { padding-block: 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+.panel-bar {
+  display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
+  padding-block: 6px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-bottom: 1px solid var(--line);
+}
+.tabs { display: flex; gap: 4px; }
+.tabs button { padding: 3px 12px; font-size: 12px; color: var(--muted); background: transparent; }
+.tabs button[aria-selected='true'] { color: var(--text); background: var(--panel-2); border-color: #3d4350; }
+.hint { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; }
+.rec { color: var(--muted); }
+.rec:has(input:checked) { color: #ff3b5c; font-weight: 600; }
+
+#editor-wrap[data-panel='pads'] { height: 340px; }
+#pads { flex: 1; min-height: 0; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.pads {
+  height: 100%; max-width: 920px; margin: 0 auto;
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  grid-template-areas:
+    'crash tom1 tom2 ride'
+    'hihatOpen snare snare floorTom'
+    'hihatClosed hihatPedal kick kick';
+}
+.pad-crash { grid-area: crash; } .pad-tom1 { grid-area: tom1; } .pad-tom2 { grid-area: tom2; } .pad-ride { grid-area: ride; }
+.pad-hihatOpen { grid-area: hihatOpen; } .pad-snare { grid-area: snare; } .pad-floorTom { grid-area: floorTom; }
+.pad-hihatClosed { grid-area: hihatClosed; } .pad-hihatPedal { grid-area: hihatPedal; } .pad-kick { grid-area: kick; }
+.pad {
+  --hit: var(--rh);
+  position: relative; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border-radius: 14px; border: 1px solid #343946;
+  background: radial-gradient(circle at 50% 45%, #2a2e38, #1a1c22 70%);
+  color: var(--text);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.pad[data-kind='cymbal'] { background: radial-gradient(circle at 50% 45%, #4a3c1c, #221d12 70%); border-color: #5a4a22; }
+.pad[data-kind='pedal'] { background: linear-gradient(#20232b, #17191e); }
+.pad:active { transform: scale(0.98); }
+.pad-name { font-size: 14px; font-weight: 600; pointer-events: none; text-align: center; word-break: keep-all; }
+.pad-keys { font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; pointer-events: none; }
+.pad.hit { animation: pad-hit 0.35s ease-out; }
+.pad.hit-dim { animation: pad-hit-dim 0.3s ease-out; }
+@keyframes pad-hit {
+  from { box-shadow: 0 0 0 2px var(--hit), 0 0 24px var(--hit), inset 0 0 40px var(--hit); }
+  to { box-shadow: 0 0 0 0 transparent, 0 0 0 transparent, inset 0 0 0 transparent; }
+}
+@keyframes pad-hit-dim {
+  from { box-shadow: 0 0 0 1px var(--hit), inset 0 0 18px var(--hit); }
+  to { box-shadow: 0 0 0 0 transparent, inset 0 0 0 transparent; }
+}
+@media (hover: none) { .pad-keys, .kbd-only { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pad:active { transform: none; } }
 #editor { flex: 1; overflow: auto; user-select: none; }
 .grid { display: grid; width: max-content; }
 .grid > div { height: 24px; border-right: 1px solid #1f2229; border-bottom: 1px solid #1f2229; }
@@ -149,6 +204,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
   .grid .label { font-size: 11px; padding: 0 6px; }
   .hint { font-size: 11px; }
   #editor-wrap { height: 240px; }
+  #editor-wrap[data-panel='pads'] { height: 46vh; height: 46dvh; }
+  .pad-name { font-size: 13px; }
   #toast { bottom: 260px; }
 }
 

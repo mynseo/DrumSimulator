@@ -1,4 +1,4 @@
-import type { Timeline } from '../core/types';
+import type { Instrument, Timeline } from '../core/types';
 import { DrumSynth } from './DrumSynth';
 
 const LOOKAHEAD = 0.12;
@@ -34,15 +34,39 @@ export class Transport {
     return this.wrap(this.ctx.currentTime - this.startTime);
   }
 
-  async play() {
-    if (this.playing) return;
+  /** 오디오 엔진을 만들고 깨운다. 브라우저 정책상 사용자 입력(클릭·탭·키) 안에서 불러야 소리가 난다 */
+  unlock(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
       this.synth = new DrumSynth(this.ctx);
     }
-    await this.ctx.resume();
+    if (this.ctx.state !== 'running') void this.ctx.resume();
+    return this.ctx;
+  }
+
+  /** 직접 연주: 지금 바로 소리를 낸다 */
+  playNow(instrument: Instrument, velocity: number) {
+    const ctx = this.unlock();
+    this.synth!.play(instrument, ctx.currentTime, velocity);
+  }
+
+  /**
+   * 직접 연주한 음을 악보에 녹음할 때, 실제로 들린 시점의 재생 위치.
+   * 출력 지연만큼 앞당겨서 연주자가 들은 박자에 맞춘다.
+   */
+  get heardPosition(): number {
+    if (!this.ctx) return this.position;
+    const latency = (this.ctx.outputLatency || 0) + this.ctx.baseLatency;
+    const d = this.timeline.duration;
+    return (((this.position - latency) % d) + d) % d;
+  }
+
+  async play() {
+    if (this.playing) return;
+    await this.unlock().resume();
+    const ctx = this.ctx!;
     const from = this.pausedAt >= this.timeline.duration ? 0 : this.pausedAt;
-    this.startTime = this.ctx.currentTime + 0.05 - from;
+    this.startTime = ctx.currentTime + 0.05 - from;
     this.scheduledUntil = from;
     this.timer = window.setInterval(() => this.schedule(), TICK_MS);
     this.schedule();
