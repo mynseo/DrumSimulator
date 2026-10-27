@@ -27,7 +27,11 @@ export class MotionPlanner {
 
   constructor(private kit: DrumKit) {}
 
-  compute(timeline: Timeline, t: number, loop: boolean): DrummerPose {
+  compute(timeline: Timeline, t: number, loop: boolean, playing = false, now = performance.now() / 1000): DrummerPose {
+    const beatLen = timeline.stepDuration * timeline.stepsPerBeat;
+    this.pose.beat = playing ? (t / beatLen) % 1 : -1;
+    this.pose.time = now;
+
     this.stick(this.pose.RH, 'RH', timeline, t, loop);
     this.stick(this.pose.LH, 'LH', timeline, t, loop);
 

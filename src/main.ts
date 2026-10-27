@@ -341,7 +341,7 @@ function frame(now: number) {
 
   const live = performance.now() / 1000;
 
-  const pose = planner.compute(timeline, t, loop);
+  const pose = planner.compute(timeline, t, loop, transport.playing, live);
   liveMotion.apply(pose, live, planner.kickPressValue, planner.hatClosedValue, transport.playing);
   rig?.apply(pose);
   kit.update(timeline, t, loop, liveMotion.kickPress, liveMotion.hatClosed, liveMotion.flashAges(live));

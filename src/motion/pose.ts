@@ -27,10 +27,14 @@ export interface DrummerPose {
   LF: FootPose;
   /** 시선 */
   lookAt: THREE.Vector3;
+  /** 재생 중이면 박 안에서의 위치(0 = 박이 시작되는 순간 … 1), 멈춰 있으면 -1. 고개 끄덕임 등에 쓴다 */
+  beat: number;
+  /** 흐르는 시간(초). 눈 깜빡임·꼬리 흔들기처럼 박자와 상관없는 움직임용 */
+  time: number;
 }
 
 export function createPose(): DrummerPose {
   const stick = (): StickPose => ({ tip: new THREE.Vector3(), lift: 0, strike: new THREE.Vector3() });
   const foot = (): FootPose => ({ heel: new THREE.Vector3(), angle: 0 });
-  return { RH: stick(), LH: stick(), RF: foot(), LF: foot(), lookAt: new THREE.Vector3() };
+  return { RH: stick(), LH: stick(), RF: foot(), LF: foot(), lookAt: new THREE.Vector3(), beat: -1, time: 0 };
 }
