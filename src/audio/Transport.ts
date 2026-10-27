@@ -1,5 +1,5 @@
 import type { Instrument, Timeline } from '../core/types';
-import { DrumSynth } from './DrumSynth';
+import { AudioEngine, DEFAULT_KIT, findKit } from './AudioEngine';
 
 const LOOKAHEAD = 0.12;
 const TICK_MS = 25;
@@ -14,7 +14,9 @@ export class Transport {
   onEnded?: () => void;
 
   private ctx: AudioContext | null = null;
-  private synth: DrumSynth | null = null;
+  private synth: AudioEngine | null = null;
+  private kitId = DEFAULT_KIT;
+  private vol = 0.8;
   private timer: number | null = null;
   /** position 0에 해당하는 AudioContext 시각 */
   private startTime = 0;
@@ -38,10 +40,28 @@ export class Transport {
   unlock(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
-      this.synth = new DrumSynth(this.ctx);
+      this.synth = new AudioEngine(this.ctx);
+      this.synth.kit = findKit(this.kitId);
+      this.synth.volume = this.vol;
     }
     if (this.ctx.state !== 'running') void this.ctx.resume();
     return this.ctx;
+  }
+
+  /**
+   * 사운드 킷을 바꾼다. 샘플 킷은 파일을 불러오는 동안에도 합성 소리로 대신 연주된다.
+   * 오디오가 아직 깨어나지 않았어도 미리 불러온다(디코딩에는 사용자 입력이 필요 없다).
+   */
+  async setKit(id: string): Promise<void> {
+    const kit = findKit(id);
+    this.kitId = kit.id;
+    if (this.synth) this.synth.kit = kit;
+    await kit.load?.();
+  }
+
+  set volume(v: number) {
+    this.vol = v;
+    if (this.synth) this.synth.volume = v;
   }
 
   /** 직접 연주: 지금 바로 소리를 낸다 */

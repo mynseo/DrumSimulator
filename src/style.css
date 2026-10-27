@@ -210,3 +210,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
 }
 
 .fatal { margin: auto; padding: 24px; text-align: center; color: var(--muted); line-height: 1.7; }
+
+input[type='range'] { width: 90px; padding: 0; accent-color: var(--accent); }
+.samples-list { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; }
+.samples-list .name { color: var(--text); }
+.samples-list .file { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.samples-list .file.set { color: var(--text); }
+.samples-list .row-actions { display: flex; gap: 4px; }
+.samples-list button { padding: 3px 8px; font-size: 12px; }

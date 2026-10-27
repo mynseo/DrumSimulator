@@ -27,6 +27,9 @@
         </label>
         <label class="check"><input id="loop" type="checkbox" checked /> 반복</label>
         <label class="check"><input id="metro" type="checkbox" /> 메트로놈</label>
+        <label>사운드 <select id="kit"></select></label>
+        <button id="kit-edit" hidden title="악기마다 내 오디오 파일 넣기">샘플 넣기</button>
+        <label>볼륨 <input id="volume" type="range" min="0" max="1.2" step="0.05" value="0.8" /></label>
       </div>
       <div class="group">
         <select id="preset" title="예제 악보"></select>
@@ -85,6 +88,17 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
         <div class="actions">
           <button value="cancel">취소</button>
           <button id="tab-ok" value="ok" class="primary">가져오기</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="samples-dialog">
+      <form method="dialog">
+        <h3>내 샘플</h3>
+        <p>악기마다 오디오 파일(wav, mp3, m4a, ogg)을 넣으세요. 비워 둔 악기는 어쿠스틱 소리로 연주합니다. 파일은 이 브라우저에만 저장되고 어디로도 보내지 않습니다.</p>
+        <div id="samples-list" class="samples-list"></div>
+        <input id="sample-file" type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff" hidden />
+        <div class="actions">
+          <button value="close" class="primary">닫기</button>
         </div>
       </form>
     </dialog>

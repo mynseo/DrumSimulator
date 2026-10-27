@@ -1,0 +1,6 @@
+These drum samples are derived from the Versilian Community Sample Library (VCSL)
+by Versilian Studios LLC, released under Creative Commons Zero (CC0 1.0, public domain).
+https://github.com/sgossner/VCSL
+
+They were trimmed, converted to mono, normalized and encoded as MP3 by
+scripts/prepare_samples.py in this repository.

@@ -1,4 +1,5 @@
 import './style.css';
+import { customKit, DEFAULT_KIT, findKit, SOUND_KITS } from './audio/AudioEngine';
 import { Transport } from './audio/Transport';
 import { cloneScore, PRESETS } from './core/presets';
 import { buildTimeline, stepsPerBar } from './core/timeline';
@@ -15,10 +16,12 @@ import type { Instrument } from './core/types';
 import { LiveMotion } from './motion/LiveMotion';
 import { Editor } from './ui/Editor';
 import { instrumentForKey, Pads } from './ui/Pads';
+import { SamplesDialog } from './ui/SamplesDialog';
 
 const STORAGE_KEY = 'drumsim.score.v1';
 const CHARACTER_KEY = 'drumsim.character';
 const PANEL_KEY = 'drumsim.panel';
+const KIT_KEY = 'drumsim.kit';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -143,6 +146,40 @@ spbSelect.addEventListener('change', () => {
 loopInput.addEventListener('change', () => (transport.loop = loopInput.checked));
 metroInput.addEventListener('change', () => (transport.metronome = metroInput.checked));
 
+// ---- 사운드 ----
+const kitSelect = $<HTMLSelectElement>('kit');
+const kitEdit = $<HTMLButtonElement>('kit-edit');
+const samplesDialog = new SamplesDialog($<HTMLDialogElement>('samples-dialog'), $('samples-list'), $<HTMLInputElement>('sample-file'));
+samplesDialog.onPreview = (instrument) => transport.playNow(instrument, 0.8);
+samplesDialog.onError = toast;
+
+kitSelect.innerHTML = SOUND_KITS.map((k) => `<option value="${k.id}" title="${k.description}">${k.name}</option>`).join('');
+
+async function selectKit(id: string) {
+  const kit = findKit(id);
+  kitSelect.value = kit.id;
+  kitSelect.title = kit.description;
+  kitEdit.hidden = kit.id !== customKit.id;
+  try {
+    localStorage.setItem(KIT_KEY, kit.id);
+  } catch {
+    /* 저장 불가 환경 */
+  }
+  try {
+    await transport.setKit(kit.id);
+  } catch {
+    toast(`${kit.name} 소리를 불러오지 못해 기본 합성 소리로 연주합니다. 인터넷 연결을 확인해 주세요`);
+  }
+}
+
+kitSelect.addEventListener('change', async () => {
+  await selectKit(kitSelect.value);
+  if (kitSelect.value === customKit.id && customKit.samples.size === 0) samplesDialog.open();
+  else transport.playNow('snare', 0.8); // 고른 소리를 바로 들려준다
+});
+kitEdit.addEventListener('click', () => samplesDialog.open());
+$<HTMLInputElement>('volume').addEventListener('input', (e) => (transport.volume = Number((e.target as HTMLInputElement).value)));
+
 presetSelect.innerHTML = '<option value="">예제 불러오기…</option>' + PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('');
 presetSelect.addEventListener('change', () => {
   const p = PRESETS[Number(presetSelect.value)];
@@ -221,7 +258,7 @@ function isTyping(target: EventTarget | null): boolean {
 
 window.addEventListener('keydown', (e) => {
   if (isTyping(e.target)) return;
-  if (tabDialog.open || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (document.querySelector('dialog[open]') || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') {
     e.preventDefault();
     togglePlay();
@@ -373,6 +410,14 @@ try {
 } catch {
   /* 저장 불가 환경 */
 }
+let savedKit: string | null = null;
+try {
+  savedKit = localStorage.getItem(KIT_KEY);
+} catch {
+  /* 저장 불가 환경 */
+}
+void selectKit(savedKit ?? DEFAULT_KIT);
+void samplesDialog.restore();
 // 휴대폰·태블릿은 처음에 드럼 패드를 보여 준다
 showPanel(savedPanel === 'score' || savedPanel === 'pads' ? savedPanel : matchMedia('(pointer: coarse)').matches ? 'pads' : 'score');
 editor.render();
