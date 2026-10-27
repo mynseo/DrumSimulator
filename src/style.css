@@ -1,0 +1,148 @@
+:root {
+  --bg: #0e0f13;
+  --panel: #16181e;
+  --panel-2: #1d2027;
+  --line: #2a2e38;
+  --text: #e6e8ee;
+  --muted: #8a90a0;
+  --accent: #ff7a2f;
+  --rh: #ff7a2f;
+  --lh: #2fb8ff;
+  --rf: #7dff6a;
+  --lf: #d77dff;
+  --label-w: 92px;
+  --cell-w: 26px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+button, select, input {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+button { cursor: pointer; }
+button:hover { border-color: #3d4350; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; font-weight: 600; }
+input[type='number'] { width: 64px; }
+label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+label.check input { margin: 0; }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.toolbar .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#viewport { position: relative; flex: 1; min-height: 240px; }
+#viewport canvas { display: block; }
+.overlay { position: absolute; pointer-events: none; }
+.overlay > * { pointer-events: auto; }
+.top-left { top: 12px; left: 14px; }
+.top-right { top: 12px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.bottom-left { bottom: 12px; left: 14px; }
+.title { font-size: 16px; font-weight: 600; }
+.position { color: var(--muted); font-variant-numeric: tabular-nums; }
+.views { display: flex; gap: 4px; }
+.views button { padding: 3px 8px; font-size: 12px; background: rgba(29, 32, 39, 0.85); }
+.legend { display: flex; gap: 12px; color: var(--muted); font-size: 12px; pointer-events: none; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.legend .rh { background: var(--rh); } .legend .lh { background: var(--lh); }
+.legend .rf { background: var(--rf); } .legend .lf { background: var(--lf); }
+
+#editor-wrap { height: 300px; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line); }
+.hint { padding: 6px 12px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+#editor { flex: 1; overflow: auto; user-select: none; }
+.grid { display: grid; width: max-content; }
+.grid > div { height: 24px; border-right: 1px solid #1f2229; border-bottom: 1px solid #1f2229; }
+.grid .label {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--panel);
+  padding: 0 8px;
+  display: flex; align-items: center;
+  font-size: 12px; color: var(--muted);
+  border-right: 1px solid var(--line);
+}
+.grid .head { font-size: 11px; color: var(--muted); display: flex; align-items: center; justify-content: center; cursor: pointer; background: var(--panel); position: sticky; top: 0; z-index: 1; }
+.grid .label.head { z-index: 3; }
+.grid .bar { border-left: 1px solid #4a5060; }
+.grid .cell { background: #14161b; cursor: pointer; position: relative; }
+.grid .cell.beat { background: #181a20; }
+.grid .cell:hover { background: #262a33; }
+.grid .playhead { box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.07); }
+.grid .head.playhead { color: var(--text); background: #2a2e38; }
+
+.grid .cell.on::before {
+  content: '';
+  position: absolute; inset: 5px;
+  border-radius: 50%;
+  background: #c9ced8;
+}
+.grid .cell.on.accent::before { inset: 2px; box-shadow: 0 0 0 2px #fff, 0 0 8px rgba(255, 255, 255, 0.5); }
+.grid .cell.on.ghost::before { inset: 8px; background: transparent; border: 1.5px solid #c9ced8; }
+.grid .cell[data-limb='RH']::before { background: var(--rh); }
+.grid .cell[data-limb='LH']::before { background: var(--lh); }
+.grid .cell[data-limb='RF']::before { background: var(--rf); }
+.grid .cell[data-limb='LF']::before { background: var(--lf); }
+.grid .cell.ghost[data-limb]::before { background: transparent; }
+.grid .cell.ghost[data-limb='RH']::before { border-color: var(--rh); }
+.grid .cell.ghost[data-limb='LH']::before { border-color: var(--lh); }
+.grid .cell.ghost[data-limb='RF']::before { border-color: var(--rf); }
+.grid .cell.ghost[data-limb='LF']::before { border-color: var(--lf); }
+.grid .cell.on[data-limb='RH']::after,
+.grid .cell.on[data-limb='LH']::after {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: #111;
+}
+.grid .cell.on[data-limb='RH']::after { content: 'R'; }
+.grid .cell.on[data-limb='LH']::after { content: 'L'; }
+.grid .cell.on.ghost::after { color: var(--text) !important; }
+.grid .cell.forced::after { text-decoration: underline; }
+.grid .cell.unplayable::before { background: #ff3b5c !important; }
+
+dialog {
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px;
+  width: min(640px, 92vw);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+dialog h3 { margin: 0 0 8px; }
+dialog p { color: var(--muted); margin: 0 0 8px; }
+dialog textarea {
+  width: 100%;
+  font: 13px/1.4 ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+}
+dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+#toast {
+  position: fixed; left: 50%; bottom: 320px; transform: translateX(-50%);
+  background: #222631; border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 14px; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+}
+#toast.show { opacity: 1; }
+
+@media (max-width: 700px) {
+  :root { --label-w: 72px; --cell-w: 24px; }
+  #editor-wrap { height: 240px; }
+  #toast { bottom: 260px; }
+}

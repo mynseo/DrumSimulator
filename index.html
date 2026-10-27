@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Drum Simulator</title>
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="group">
+        <button id="play" class="primary" title="재생 / 일시정지 (Space)">▶ 재생</button>
+        <button id="stop" title="처음으로">■</button>
+        <label>BPM <input id="bpm" type="number" min="30" max="300" step="1" /></label>
+        <label>마디 <input id="bars" type="number" min="1" max="128" step="1" /></label>
+        <label>박 분할
+          <select id="spb">
+            <option value="4">16분음표</option>
+            <option value="3">셋잇단</option>
+            <option value="2">8분음표</option>
+          </select>
+        </label>
+        <label class="check"><input id="loop" type="checkbox" checked /> 반복</label>
+        <label class="check"><input id="metro" type="checkbox" /> 메트로놈</label>
+      </div>
+      <div class="group">
+        <select id="preset" title="예제 악보"></select>
+        <button id="import" title="MIDI(.mid), 드럼 탭(.txt), 악보 파일(.json) 불러오기">불러오기</button>
+        <button id="tab" title="텍스트 드럼 탭 붙여넣기">탭 붙여넣기</button>
+        <button id="export" title="악보를 JSON 파일로 저장">저장</button>
+        <input id="file" type="file" accept=".mid,.midi,.txt,.json" hidden />
+      </div>
+    </header>
+
+    <main>
+      <div id="viewport">
+        <div class="overlay top-left">
+          <div id="title" class="title"></div>
+          <div id="position" class="position">1 : 1</div>
+        </div>
+        <div class="overlay top-right">
+          <label>캐릭터 <select id="character"></select></label>
+          <div class="views">
+            <button data-view="front">정면</button>
+            <button data-view="side">측면</button>
+            <button data-view="top">위</button>
+            <button data-view="drummer">드러머 시점</button>
+          </div>
+        </div>
+        <div class="overlay bottom-left legend">
+          <span><i class="rh"></i>오른손</span>
+          <span><i class="lh"></i>왼손</span>
+          <span><i class="rf"></i>오른발</span>
+          <span><i class="lf"></i>왼발</span>
+        </div>
+      </div>
+      <section id="editor-wrap">
+        <div class="hint">클릭: 음 추가 → 악센트 → 고스트 → 삭제 · 우클릭: 손 지정(자동 → R → L) · 머리줄 클릭: 그 위치로 이동 · Space: 재생/정지</div>
+        <div id="editor"></div>
+      </section>
+    </main>
+
+    <dialog id="tab-dialog">
+      <form method="dialog">
+        <h3>드럼 탭 붙여넣기</h3>
+        <p>한 줄에 악기 하나, 마디는 <code>|</code>로 구분합니다. HH 줄의 <code>o</code>는 오픈 하이햇입니다.</p>
+        <textarea id="tab-text" spellcheck="false" rows="10">C |x---------------|----------------|
+HH|--x-x-x-x-x-x-x-|x-x-x-x-x-x-o---|
+S |----o-------o---|----o-------o-oo|
+B |o-------o-o-----|o-------o-o-----|</textarea>
+        <div class="actions">
+          <button value="cancel">취소</button>
+          <button id="tab-ok" value="ok" class="primary">가져오기</button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toast"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

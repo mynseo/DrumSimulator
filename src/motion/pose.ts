@@ -1,0 +1,36 @@
+import * as THREE from 'three';
+
+/**
+ * 모션 플래너가 계산하고 캐릭터 리그가 따라 하는 "드러머 자세".
+ * 캐릭터마다 몸 크기가 달라도 같은 자세를 쓸 수 있도록, 관절 각도가 아니라
+ * 스틱 끝·발의 목표 위치(월드 좌표)로 표현한다. 각 리그가 IK로 나머지를 푼다.
+ */
+export interface StickPose {
+  /** 스틱 끝의 목표 위치 */
+  tip: THREE.Vector3;
+  /** 타격면 위로 들어 올린 높이(m). 리그는 이 값으로 손목을 꺾는 정도를 정한다 */
+  lift: number;
+  /** 스틱이 향하던 타격 지점(들어 올리기 전) */
+  strike: THREE.Vector3;
+}
+
+export interface FootPose {
+  heel: THREE.Vector3;
+  /** 발판 각도(라디안, +면 발끝이 들림) */
+  angle: number;
+}
+
+export interface DrummerPose {
+  RH: StickPose;
+  LH: StickPose;
+  RF: FootPose;
+  LF: FootPose;
+  /** 시선 */
+  lookAt: THREE.Vector3;
+}
+
+export function createPose(): DrummerPose {
+  const stick = (): StickPose => ({ tip: new THREE.Vector3(), lift: 0, strike: new THREE.Vector3() });
+  const foot = (): FootPose => ({ heel: new THREE.Vector3(), angle: 0 });
+  return { RH: stick(), LH: stick(), RF: foot(), LF: foot(), lookAt: new THREE.Vector3() };
+}
