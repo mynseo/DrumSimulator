@@ -24,6 +24,15 @@ npm run build    # 타입 검사 + 배포용 빌드(dist/)
 
 빌드 결과(`dist/`)는 상대 경로로 만들어지므로 Netlify, Vercel, Cloudflare Pages 같은 정적 호스팅에 그대로 올려도 됩니다.
 
+## 단일 HTML 페이지로 빌드
+
+```bash
+npm run build:artifact   # dist-artifact/drum-simulator.html
+```
+
+앱 코드와 스타일을 HTML 한 파일에 넣고, three.js는 jsDelivr CDN에서 불러옵니다.
+claude.ai 아티팩트처럼 파일 다운로드가 막힌 곳에서는 "저장" 버튼이 악보 JSON을 클립보드에 복사합니다.
+
 ## 지금 되는 것
 
 - **3D 드럼 연주**: 드럼 세트(킥·스네어·탐 3개·하이햇·크래시·라이드)와 드러머가 악보대로 연주합니다. 마우스로 돌려 보고, 정면·측면·위·드러머 시점으로 전환할 수 있습니다.

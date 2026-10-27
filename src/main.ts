@@ -184,8 +184,19 @@ tabDialog.addEventListener('close', () => {
   }
 });
 
-$('export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(score, null, 2)], { type: 'application/json' });
+$('export').addEventListener('click', async () => {
+  const json = JSON.stringify(score, null, 2);
+  // claude.ai 아티팩트 안에서는 파일 다운로드가 막혀 있으므로 클립보드로 복사한다
+  if (import.meta.env.VITE_TARGET === 'artifact') {
+    try {
+      await navigator.clipboard.writeText(json);
+      toast('악보 JSON을 클립보드에 복사했습니다. 메모장에 붙여 넣어 .json으로 저장하세요');
+    } catch {
+      toast('클립보드에 복사하지 못했습니다');
+    }
+    return;
+  }
+  const blob = new Blob([json], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `${score.title || 'score'}.json`;

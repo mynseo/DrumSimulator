@@ -44,7 +44,9 @@ label.check input { margin: 0; }
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
+  padding-block: 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
@@ -55,9 +57,9 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 #viewport canvas { display: block; }
 .overlay { position: absolute; pointer-events: none; }
 .overlay > * { pointer-events: auto; }
-.top-left { top: 12px; left: 14px; }
-.top-right { top: 12px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.bottom-left { bottom: 12px; left: 14px; }
+.top-left { top: 12px; left: max(16px, env(safe-area-inset-left, 0px)); }
+.top-right { top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.bottom-left { bottom: 12px; left: max(16px, env(safe-area-inset-left, 0px)); }
 .title { font-size: 16px; font-weight: 600; }
 .position { color: var(--muted); font-variant-numeric: tabular-nums; }
 .views { display: flex; gap: 4px; }
@@ -68,7 +70,7 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .legend .rf { background: var(--rf); } .legend .lf { background: var(--lf); }
 
 #editor-wrap { height: 300px; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line); }
-.hint { padding: 6px 12px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+.hint { padding-block: 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
 #editor { flex: 1; overflow: auto; user-select: none; }
 .grid { display: grid; width: max-content; }
 .grid > div { height: 24px; border-right: 1px solid #1f2229; border-bottom: 1px solid #1f2229; }
