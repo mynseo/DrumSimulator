@@ -10,19 +10,16 @@ export interface ProceduralStyle {
   pants: number;
   shoes: number;
   stick: number;
-  /** human = 사람, cat = 고양이(귀·수염·꼬리), robot = 화면 얼굴 로봇 */
+  /** human = 사람, cat = 고양이(세모 귀), robot = 네모 머리 로봇 */
   head: 'human' | 'cat' | 'robot';
   hair?: number;
-  /** bob = 단발, spiky = 삐죽 머리 */
-  hairStyle?: 'bob' | 'spiky';
-  /** 로봇 눈·안테나 불빛 색 */
+  /** 로봇 눈 불빛 색 */
   glow?: number;
   /** 팔다리 굵기 배율 */
   bulk?: number;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
-const FORWARD = new THREE.Vector3(0, 0, 1);
 const SEAT = new THREE.Vector3(0, 0.53, 0.42);
 const UPPER_ARM = 0.29;
 const FOREARM = 0.27;
@@ -42,11 +39,10 @@ const MAX_YAW = 0.55;
 const MAX_LOOK_DOWN = 0.6;
 const MAX_LOOK_UP = 0.3;
 
-const BLUSH = 0xff8fa3;
 const EYE = 0x1d1a26;
 
 /**
- * 기본 도형으로 만든 귀여운 캐릭터. 팔·다리는 2관절 IK로 목표를 따라간다.
+ * 기본 도형으로 만든 단순한 캐릭터: 큰 머리와 점 눈. 팔·다리는 2관절 IK로 목표를 따라간다.
  * 목은 몸통에 붙어 있고 머리는 목 위 끝을 축으로 정해진 범위 안에서만 돈다.
  */
 export class ProceduralRig implements DrummerRig {
@@ -61,8 +57,6 @@ export class ProceduralRig implements DrummerRig {
   private sticks: Record<'RH' | 'LH', THREE.Mesh>;
   private feet: Record<'RF' | 'LF', THREE.Group>;
   private eyes: THREE.Object3D[] = [];
-  private tail: THREE.Group | null = null;
-  private antenna: THREE.Group | null = null;
   private materials: THREE.Material[] = [];
   private geometries: THREE.BufferGeometry[] = [];
 
@@ -155,7 +149,6 @@ export class ProceduralRig implements DrummerRig {
     };
     this.feet = { RF: makeFoot(), LF: makeFoot() };
 
-    if (style.head === 'cat') this.buildTail(skin);
   }
 
   apply(pose: DrummerPose) {
@@ -173,7 +166,7 @@ export class ProceduralRig implements DrummerRig {
     this.upper.updateMatrixWorld(true);
 
     this.aimHead(pose.lookAt, groove);
-    this.animateFace(pose.time, groove);
+    this.animateFace(pose.time);
 
     this.applyArm('RH', pose.RH, this.shoulderR, 1);
     this.applyArm('LH', pose.LH, this.shoulderL, -1);
@@ -193,13 +186,11 @@ export class ProceduralRig implements DrummerRig {
     this.head.rotation.set(this.pitch + groove * 0.12, Math.PI + this.yaw, 0);
   }
 
-  private animateFace(time: number, groove: number) {
+  private animateFace(time: number) {
     // 3~5초마다 눈을 깜빡인다
     if (time > this.nextBlink + 0.14) this.nextBlink = time + 2.5 + Math.random() * 2.5;
     const blinking = time > this.nextBlink;
     for (const e of this.eyes) e.scale.y = blinking ? 0.12 : 1;
-    if (this.tail) this.tail.rotation.y = Math.sin(time * 2.4) * 0.35 + groove * 0.15;
-    if (this.antenna) this.antenna.rotation.z = Math.sin(time * 9) * 0.12 * groove;
   }
 
   private applyArm(limb: 'RH' | 'LH', stick: StickPose, shoulderObj: THREE.Object3D, side: number) {
@@ -230,214 +221,57 @@ export class ProceduralRig implements DrummerRig {
     this.legs[limb].solve(hip, ankle, THIGH, SHIN, this.v2.set(side * 0.15, 0.4, -1).normalize());
   }
 
-  // ---- 얼굴 ----
-
-  /** 머리 구 표면 위의 점. yaw는 좌우(+는 캐릭터의 왼쪽), pitch는 위아래 */
-  private onHead(yaw: number, pitch: number, out = 0): { pos: THREE.Vector3; normal: THREE.Vector3 } {
-    const normal = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-    const pos = normal.clone().multiplyScalar(HEAD_R + out).add(new THREE.Vector3(0, HEAD_LIFT, 0));
-    return { pos, normal };
-  }
-
-  /** 머리 표면에 붙이고 바깥을 보게 한다 */
-  private stick(obj: THREE.Object3D, yaw: number, pitch: number, out = 0) {
-    const { pos, normal } = this.onHead(yaw, pitch, out);
-    obj.position.copy(pos);
-    obj.quaternion.setFromUnitVectors(FORWARD, normal);
-    this.head.add(obj);
-    return obj;
-  }
+  // ---- 얼굴: 큰 머리, 점 눈, 머리 모양만 남긴 단순한 형태 ----
 
   private buildFace(skin: THREE.Material) {
     const { style } = this;
     const head = new THREE.Mesh(this.geo(new THREE.SphereGeometry(HEAD_R, 32, 24)), skin);
     head.position.y = HEAD_LIFT;
-    head.scale.set(1.04, 0.96, 1);
     head.castShadow = true;
     this.head.add(head);
+    this.addDotEyes(this.mat(EYE, 0.4), HEAD_R * 0.97, 0.05);
 
-    // 크고 반짝이는 눈
-    const eyeMat = this.mat(EYE, 0.3);
-    const shine = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.materials.push(shine);
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Group();
-      const ball = new THREE.Mesh(this.geo(new THREE.SphereGeometry(0.026, 16, 12)), eyeMat);
-      ball.scale.set(0.85, 1.2, 0.45);
-      const big = new THREE.Mesh(this.geo(new THREE.SphereGeometry(0.0085, 8, 6)), shine);
-      big.position.set(0.008, 0.012, 0.01);
-      const small = new THREE.Mesh(this.geo(new THREE.SphereGeometry(0.004, 6, 4)), shine);
-      small.position.set(-0.007, -0.009, 0.011);
-      eye.add(ball, big, small);
-      this.stick(eye, side * 0.36, 0.0, -0.004);
-      this.eyes.push(eye);
-    }
-
-    // 볼터치
-    const blush = new THREE.MeshBasicMaterial({ color: BLUSH, transparent: true, opacity: 0.55, depthWrite: false });
-    this.materials.push(blush);
-    for (const side of [-1, 1]) {
-      const b = new THREE.Mesh(this.geo(new THREE.CircleGeometry(0.024, 20)), blush);
-      b.scale.x = 1.35;
-      this.stick(b, side * 0.62, -0.2, 0.002);
-    }
-
-    const mouthMat = this.mat(0x6b2f36, 0.6);
     if (style.head === 'cat') {
-      // 분홍 코와 ω 입, 수염, 세모 귀
-      const nose = new THREE.Mesh(this.geo(new THREE.SphereGeometry(0.012, 10, 8)), this.mat(0xff8fa3, 0.5));
-      nose.scale.set(1.3, 0.9, 0.7);
-      this.stick(nose, 0, -0.12, 0);
-      const arc = this.geo(new THREE.TorusGeometry(0.011, 0.003, 6, 12, Math.PI));
+      // 고양이는 세모 귀 두 개로만 알아보게 한다
+      const ear = this.geo(new THREE.ConeGeometry(0.07, 0.12, 12));
       for (const side of [-1, 1]) {
-        const m = new THREE.Mesh(arc, mouthMat);
-        m.rotation.z = Math.PI;
-        const g = new THREE.Group();
-        m.position.x = side * 0.011;
-        g.add(m);
-        this.stick(g, 0, -0.22, 0);
-      }
-      const whiskerMat = this.mat(0x4a3b3b, 0.6);
-      const whisker = this.geo(new THREE.CylinderGeometry(0.0018, 0.0018, 0.085, 4));
-      for (const side of [-1, 1]) {
-        for (const tilt of [-0.18, 0.12]) {
-          const w = new THREE.Mesh(whisker, whiskerMat);
-          w.rotation.z = Math.PI / 2 + tilt * side;
-          const g = new THREE.Group();
-          w.position.x = side * 0.04;
-          g.add(w);
-          this.stick(g, side * 0.42, -0.16 + tilt * 0.1, 0.003);
-        }
-      }
-      const earMat = skin;
-      const inner = this.mat(0xffb3c1, 0.6);
-      for (const side of [-1, 1]) {
-        const ear = new THREE.Group();
-        const outer = new THREE.Mesh(this.geo(new THREE.ConeGeometry(0.075, 0.13, 16)), earMat);
-        outer.castShadow = true;
-        const pink = new THREE.Mesh(this.geo(new THREE.ConeGeometry(0.046, 0.085, 16)), inner);
-        pink.position.set(0, -0.012, 0.022);
-        ear.add(outer, pink);
-        const { pos } = this.onHead(side * 0.5, 0.95, -0.02);
-        ear.position.copy(pos);
-        ear.rotation.set(0.15, 0, -side * 0.35);
-        this.head.add(ear);
+        const e = new THREE.Mesh(ear, skin);
+        e.position.set(side * 0.085, HEAD_LIFT + 0.12, 0);
+        e.rotation.z = -side * 0.4;
+        e.castShadow = true;
+        this.head.add(e);
       }
       return;
     }
-
-    // 사람: 웃는 입, 귀, 머리카락
-    const smile = new THREE.Mesh(this.geo(new THREE.TorusGeometry(0.02, 0.0045, 6, 16, Math.PI)), mouthMat);
-    smile.rotation.z = Math.PI;
-    const g = new THREE.Group();
-    g.add(smile);
-    this.stick(g, 0, -0.27, 0);
-    for (const side of [-1, 1]) {
-      const ear = new THREE.Mesh(this.geo(new THREE.SphereGeometry(0.03, 12, 8)), skin);
-      ear.scale.set(0.6, 1, 0.8);
-      ear.position.set(side * HEAD_R * 1.02, HEAD_LIFT - 0.01, 0);
-      this.head.add(ear);
-    }
     if (style.hair === undefined) return;
-    const hairMat = this.mat(style.hair, 0.85);
-    // 앞이마가 보이도록 뒤로 기울인 머리 덮개
-    const cap = new THREE.Mesh(this.geo(new THREE.SphereGeometry(HEAD_R * 1.07, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.55)), hairMat);
-    cap.position.y = HEAD_LIFT + 0.004;
-    cap.rotation.x = -0.5;
-    cap.castShadow = true;
-    this.head.add(cap);
-    if (style.hairStyle === 'spiky') {
-      const spike = this.geo(new THREE.ConeGeometry(0.035, 0.11, 10));
-      for (let i = 0; i < 9; i++) {
-        const yaw = (i / 9) * Math.PI * 2;
-        const pitch = 0.75 + (i % 2) * 0.2;
-        const s = new THREE.Mesh(spike, hairMat);
-        const { pos, normal } = this.onHead(yaw, pitch, -0.01);
-        s.position.copy(pos);
-        s.quaternion.setFromUnitVectors(UP, normal);
-        s.castShadow = true;
-        this.head.add(s);
-      }
-    } else {
-      // 동글동글한 앞머리
-      const bang = this.geo(new THREE.SphereGeometry(0.045, 12, 8));
-      for (const yaw of [-0.55, -0.2, 0.15, 0.5]) {
-        const b = new THREE.Mesh(bang, hairMat);
-        b.scale.set(1, 0.7, 0.55);
-        this.stick(b, yaw, 0.4, -0.005);
-      }
-    }
+    // 앞이마가 보이도록 뒤로 기울인 머리 덮개 하나
+    const hair = new THREE.Mesh(this.geo(new THREE.SphereGeometry(HEAD_R * 1.06, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.55)), this.mat(style.hair, 0.85));
+    hair.position.y = HEAD_LIFT + 0.004;
+    hair.rotation.x = -0.5;
+    hair.castShadow = true;
+    this.head.add(hair);
   }
 
   private buildRobotHead(body: THREE.Material) {
-    const glow = this.style.glow ?? 0x35f0ff;
-    const head = new THREE.Mesh(this.geo(new RoundedBoxGeometry(0.32, 0.27, 0.27, 4, 0.07)), body);
+    const head = new THREE.Mesh(this.geo(new RoundedBoxGeometry(0.3, 0.26, 0.26, 4, 0.07)), body);
     head.position.y = HEAD_LIFT;
     head.castShadow = true;
     this.head.add(head);
-    const screen = new THREE.Mesh(this.geo(new RoundedBoxGeometry(0.25, 0.17, 0.02, 3, 0.008)), this.mat(0x12141a, 0.25, 0.2));
-    screen.position.set(0, HEAD_LIFT - 0.005, 0.13);
-    this.head.add(screen);
-
-    const light = new THREE.MeshBasicMaterial({ color: glow });
+    const light = new THREE.MeshBasicMaterial({ color: this.style.glow ?? 0x35f0ff });
     this.materials.push(light);
+    this.addDotEyes(light, 0.131, 0.055);
+  }
+
+  /** 얼굴 앞(+Z)에 점 눈 두 개. 깜빡일 때 세로로 납작해진다 */
+  private addDotEyes(mat: THREE.Material, depth: number, spacing: number) {
+    const dot = this.geo(new THREE.SphereGeometry(0.02, 12, 10));
     for (const side of [-1, 1]) {
-      const eye = new THREE.Group();
-      const e = new THREE.Mesh(this.geo(new THREE.CircleGeometry(0.024, 20)), light);
-      e.scale.y = 1.3;
-      eye.add(e);
-      eye.position.set(side * 0.058, HEAD_LIFT + 0.012, 0.1415);
+      const eye = new THREE.Mesh(dot, mat);
+      eye.scale.set(1, 1.25, 0.5);
+      eye.position.set(side * spacing, HEAD_LIFT + 0.01, depth);
       this.head.add(eye);
       this.eyes.push(eye);
     }
-    const smile = new THREE.Mesh(this.geo(new THREE.TorusGeometry(0.02, 0.004, 6, 16, Math.PI)), light);
-    smile.rotation.z = Math.PI;
-    smile.position.set(0, HEAD_LIFT - 0.035, 0.1415);
-    this.head.add(smile);
-    const blush = new THREE.MeshBasicMaterial({ color: BLUSH, transparent: true, opacity: 0.7 });
-    this.materials.push(blush);
-    for (const side of [-1, 1]) {
-      const b = new THREE.Mesh(this.geo(new THREE.CircleGeometry(0.016, 16)), blush);
-      b.scale.x = 1.4;
-      b.position.set(side * 0.092, HEAD_LIFT - 0.028, 0.1415);
-      this.head.add(b);
-    }
-
-    // 볼트 귀와 통통 튀는 안테나
-    const metal = this.mat(0x3a3f48, 0.35, 0.8);
-    for (const side of [-1, 1]) {
-      const bolt = new THREE.Mesh(this.geo(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 16)), metal);
-      bolt.rotation.z = Math.PI / 2;
-      bolt.position.set(side * 0.17, HEAD_LIFT, 0);
-      this.head.add(bolt);
-    }
-    this.antenna = new THREE.Group();
-    this.antenna.position.set(0, HEAD_LIFT + 0.135, 0);
-    const rod = new THREE.Mesh(this.geo(new THREE.CylinderGeometry(0.006, 0.006, 0.08, 6)), metal);
-    rod.position.y = 0.04;
-    const ball = new THREE.Mesh(this.geo(new THREE.SphereGeometry(0.022, 12, 10)), new THREE.MeshBasicMaterial({ color: 0xff7a9c }));
-    this.materials.push(ball.material as THREE.Material);
-    ball.position.y = 0.09;
-    this.antenna.add(rod, ball);
-    this.head.add(this.antenna);
-  }
-
-  private buildTail(fur: THREE.Material) {
-    this.tail = new THREE.Group();
-    this.tail.position.copy(SEAT).add(new THREE.Vector3(0, 0.08, 0.13));
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, 0.03, 0.1),
-      new THREE.Vector3(0.02, 0.15, 0.17),
-      new THREE.Vector3(0.05, 0.28, 0.13),
-      new THREE.Vector3(0.03, 0.34, 0.06),
-    ]);
-    const mesh = new THREE.Mesh(this.geo(new THREE.TubeGeometry(curve, 24, 0.028, 10)), fur);
-    mesh.castShadow = true;
-    const tip = new THREE.Mesh(this.geo(new THREE.SphereGeometry(0.028, 10, 8)), fur);
-    tip.position.copy(curve.getPoint(1));
-    this.tail.add(mesh, tip);
-    this.root.add(this.tail);
   }
 
   // ---- 메시 헬퍼 (Limb에서도 쓴다) ----

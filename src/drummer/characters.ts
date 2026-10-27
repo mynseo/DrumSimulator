@@ -10,7 +10,7 @@ export const CHARACTERS: CharacterDef[] = [
     id: 'drummer',
     name: '드러머',
     create: () =>
-      new ProceduralRig({ skin: 0xffd9bf, shirt: 0x5b8def, pants: 0x34405e, shoes: 0xf2f2f2, stick: 0xe6c690, head: 'human', hair: 0x4a2c20, hairStyle: 'bob' }),
+      new ProceduralRig({ skin: 0xffd9bf, shirt: 0x5b8def, pants: 0x34405e, shoes: 0xf2f2f2, stick: 0xe6c690, head: 'human', hair: 0x4a2c20 }),
   },
   {
     id: 'cat',
@@ -28,6 +28,6 @@ export const CHARACTERS: CharacterDef[] = [
     id: 'rocker',
     name: '록커',
     create: () =>
-      new ProceduralRig({ skin: 0xf1c3a0, shirt: 0xe23d5b, pants: 0x1e1e26, shoes: 0x1e1e26, stick: 0xf5f0e6, head: 'human', hair: 0xffd23f, hairStyle: 'spiky', bulk: 0.95 }),
+      new ProceduralRig({ skin: 0xf1c3a0, shirt: 0xe23d5b, pants: 0x1e1e26, shoes: 0x1e1e26, stick: 0xf5f0e6, head: 'human', hair: 0xffd23f, bulk: 0.95 }),
   },
 ];

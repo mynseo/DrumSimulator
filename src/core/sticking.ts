@@ -3,6 +3,8 @@ import type { Hand, Instrument, Limb, ScoreNote } from './types';
 
 /** 한 손으로 연속해서 무리 없이 칠 수 있는 최소 간격(초). 이보다 빠르면 손을 바꾼다. */
 export const MIN_SAME_HAND_GAP = 0.11;
+/** 동시에 치는 두 악기가 이보다 멀리 떨어져 있으면 팔을 엇갈리지 않는다 */
+const CROSS_LIMIT = 0.6;
 /** 이 간격 안에서 단타가 이어지면 "연속 패시지"로 보고 손을 번갈아 쓴다 */
 const ALTERNATE_WINDOW = 0.3;
 
@@ -81,10 +83,12 @@ export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb 
       const ia = INSTRUMENT_INFO[notes[a].instrument];
       const ib = INSTRUMENT_INFO[notes[b].instrument];
       let rightIdx: number;
+      // 서로 멀리 떨어진 두 악기(왼쪽 크래시 + 오른쪽 플로어 탐)는 팔이 엇갈리지 않게 좌우대로 친다
+      const farApart = Math.abs(ia.lateral - ib.lateral) > CROSS_LIMIT;
       if (ia.timekeeper && !ib.timekeeper) rightIdx = a;
       else if (ib.timekeeper && !ia.timekeeper) rightIdx = b;
-      else if (ia.cymbal && !ib.cymbal) rightIdx = a;
-      else if (ib.cymbal && !ia.cymbal) rightIdx = b;
+      else if (!farApart && ia.cymbal && !ib.cymbal) rightIdx = a;
+      else if (!farApart && ib.cymbal && !ia.cymbal) rightIdx = b;
       else rightIdx = ia.lateral >= ib.lateral ? a : b;
       use('R', rightIdx, time);
       use('L', rightIdx === a ? b : a, time);
@@ -94,7 +98,9 @@ export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb 
       if (available.length === 1) {
         hand = available[0];
       } else {
-        hand = cheaperHand(notes[idx], time, state, lastSingle);
+        // 오른손이 곧 하이햇·라이드를 또 쳐야 하면(박자 유지 중), 사이의 음은 왼손이 맡는다
+        const rightBusy = !INSTRUMENT_INFO[notes[idx].instrument].timekeeper && timekeeperSoon(notes, i, time, stepDuration);
+        hand = cheaperHand(notes[idx], time, state, lastSingle, rightBusy);
         // 하이햇·라이드로 박자를 유지하는 것은 필인처럼 번갈아 치는 패시지가 아니다
         if (!INSTRUMENT_INFO[notes[idx].instrument].timekeeper) lastSingle = { hand, time };
       }
@@ -104,11 +110,24 @@ export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb 
   return result;
 }
 
+/** 오른손이 이 시간 안에 하이햇·라이드로 돌아가야 하면 "바쁘다"고 본다 */
+const RIGHT_BUSY_WINDOW = 0.2;
+
+/** 곧(RIGHT_BUSY_WINDOW 안에) 하이햇·라이드 음이 있는가 (notes는 step 순, from은 다음 묶음의 시작) */
+function timekeeperSoon(notes: ScoreNote[], from: number, time: number, stepDuration: number): boolean {
+  for (let j = from; j < notes.length; j++) {
+    if (notes[j].step * stepDuration - time > RIGHT_BUSY_WINDOW) return false;
+    if (INSTRUMENT_INFO[notes[j].instrument].timekeeper && !notes[j].hand) return true;
+  }
+  return false;
+}
+
 function cheaperHand(
   note: ScoreNote,
   time: number,
   state: Record<Hand, HandState>,
   lastSingle: { hand: Hand; time: number },
+  rightBusy = false,
 ): Hand {
   const info = INSTRUMENT_INFO[note.instrument];
   const cost = (h: Hand): number => {
@@ -123,6 +142,7 @@ function cheaperHand(
     if (!inPassage && h === 'L') c += 0.6; // 새 프레이즈는 오른손으로 시작
 
     if (info.timekeeper && h === 'R') c -= 1.5;
+    if (rightBusy && h === 'R') c += 1.5;
     // 오른손이 가까이 있지 않은데 왼손이 오른쪽 끝(플로어 탐·라이드)까지 건너가는 것을 피한다
     if (h === 'L' && info.lateral > state[other(h)].lateral + 0.25 && info.lateral > 0.3) c += 0.8;
     if (h === 'R' && info.lateral < state[other(h)].lateral - 0.25 && !info.timekeeper && info.lateral < -0.35) c += 0.4;

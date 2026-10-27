@@ -1,4 +1,5 @@
 import { VELOCITY } from './instruments';
+import { featuredSolo, randomSolo } from './solo';
 import type { Instrument, Score, ScoreNote } from './types';
 
 /**
@@ -24,7 +25,14 @@ function pattern(rows: Partial<Record<Instrument, string>>): ScoreNote[] {
 
 const base = { version: 1 as const, beatsPerBar: 4 };
 
-export const PRESETS: { name: string; score: Score }[] = [
+export interface Preset {
+  name: string;
+  score: Score;
+  /** 있으면 고를 때마다 새로 만든다 (랜덤 솔로) */
+  make?: () => Score;
+}
+
+export const PRESETS: Preset[] = [
   {
     name: '8비트 록',
     score: {
@@ -92,6 +100,8 @@ export const PRESETS: { name: string; score: Score }[] = [
       }),
     },
   },
+  { name: '드럼 솔로', score: featuredSolo() },
+  { name: '드럼 솔로 (매번 새로 만들기)', score: randomSolo(1), make: () => randomSolo() },
   {
     name: '빈 악보',
     score: { ...base, title: '새 악보', bpm: 100, stepsPerBeat: 4, bars: 2, notes: [] },

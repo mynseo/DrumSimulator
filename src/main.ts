@@ -184,7 +184,7 @@ presetSelect.innerHTML = '<option value="">예제 불러오기…</option>' + PR
 presetSelect.addEventListener('change', () => {
   const p = PRESETS[Number(presetSelect.value)];
   presetSelect.value = '';
-  if (p) setScore(cloneScore(p.score));
+  if (p) setScore(p.make ? p.make() : cloneScore(p.score));
 });
 
 characterSelect.innerHTML = CHARACTERS.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');

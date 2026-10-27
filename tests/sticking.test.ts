@@ -36,6 +36,27 @@ describe('손발 배정', () => {
     expect(tl.hits.find((h) => h.instrument === 'snare')!.limb).toBe('RH');
   });
 
+  it('하이햇 사이의 고스트 스네어는 왼손 (오른손은 하이햇을 계속 친다)', () => {
+    const tl = buildTimeline(score([n(0, 'hihatClosed'), n(2, 'hihatClosed'), n(3, 'snare'), n(4, 'hihatClosed')], 112));
+    expect(tl.hits.find((h) => h.instrument === 'snare')!.limb).toBe('LH');
+  });
+
+  it('1박 크래시는 바로 뒤에 하이햇이 이어져도 오른손', () => {
+    const tl = buildTimeline(score([n(0, 'crash'), n(0, 'kick'), n(2, 'hihatClosed'), n(4, 'hihatClosed')], 112));
+    expect(tl.hits.find((h) => h.instrument === 'crash')!.limb).toBe('RH');
+  });
+
+  it('왼쪽 크래시와 오른쪽 플로어 탐을 같이 치면 팔을 엇갈리지 않는다', () => {
+    const tl = buildTimeline(score([n(0, 'crash'), n(0, 'floorTom')]));
+    expect(tl.hits.find((h) => h.instrument === 'crash')!.limb).toBe('LH');
+    expect(tl.hits.find((h) => h.instrument === 'floorTom')!.limb).toBe('RH');
+  });
+
+  it('크래시와 스네어를 같이 치면 크래시는 오른손', () => {
+    const tl = buildTimeline(score([n(0, 'crash'), n(0, 'snare')]));
+    expect(tl.hits.find((h) => h.instrument === 'crash')!.limb).toBe('RH');
+  });
+
   it('손으로 칠 음이 셋이면 하나는 칠 수 없다고 표시', () => {
     const tl = buildTimeline(score([n(0, 'crash'), n(0, 'snare'), n(0, 'tom1')]));
     expect(tl.hits.filter((h) => h.limb === null)).toHaveLength(1);

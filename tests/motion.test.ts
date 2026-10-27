@@ -39,7 +39,7 @@ describe('드러머 자세', () => {
     const kit = new DrumKit();
     const planner = new MotionPlanner(kit);
     const live = new LiveMotion(kit);
-    const tl = buildTimeline(PRESETS[4].score);
+    const tl = buildTimeline(PRESETS.find((p) => p.name === '빈 악보')!.score);
     live.apply(planner.compute(tl, 0, true), 0.9, 0, 1, false);
     live.hit('RH', 'floorTom', 1, 0.8);
     const atHit = live.apply(planner.compute(tl, 0, true), 1.05, 0, 1, false);
