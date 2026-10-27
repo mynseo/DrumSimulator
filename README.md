@@ -58,7 +58,7 @@ claude.ai 아티팩트처럼 파일 다운로드가 막힌 곳에서는 "저장"
   - **어쿠스틱 (실제 녹음)**: 실제 드럼을 녹음한 샘플. 세기에 따라 다른 녹음(부드러운/단단한 음색)을 씁니다.
   - **기본 합성**, **808**(힙합·트랩), **일렉트로닉**(909 계열, 하우스·테크노), **8비트**(게임기 소리)
   - **내 샘플**: 내 오디오 파일(wav, mp3 등)을 악기마다 넣어 연주. 파일은 브라우저(IndexedDB)에만 저장됩니다.
-- **캐릭터 교체**: 드러머 / 기사(KayKit 3D 모델) / 고양이 / 로봇 / 록커. 큰 머리와 점 눈의 단순한 캐릭터로, 눈을 깜빡이고 연주 중에는 박자에 맞춰 고개를 끄덕입니다.
+- **캐릭터 교체**: 드러머 / 기사·도적(KayKit 3D 모델) / 고양이 / 로봇 / 록커. 큰 머리와 점 눈의 단순한 캐릭터로, 눈을 깜빡이고 연주 중에는 박자에 맞춰 고개를 끄덕입니다.
 - **드럼 솔로**: 예제의 "드럼 솔로"(정해진 8마디)와 "드럼 솔로 (매번 새로 만들기)"(고를 때마다 새 솔로). 스네어 악센트·고스트, 탐 돌리기, 손발 섞기, 크래시 강조를 한 박 단위 조각으로 이어 붙이고, 사람이 칠 수 있는지(손 셋이 필요 없고 같은 손 연타가 너무 빠르지 않은지) 테스트로 확인합니다.
 
 ## 구조
@@ -84,7 +84,7 @@ claude.ai 아티팩트처럼 파일 다운로드가 막힌 곳에서는 "저장"
 `src/drummer/GltfRig.ts`가 뼈대 있는 glTF 모델을 드러머로 만듭니다.
 모델의 앉은 자세 애니메이션을 기본으로 두고, 매 프레임 팔·다리 뼈에 2관절 IK를, 머리 뼈에 시선을, 척추에 상체 기울기를 적용합니다.
 2등신처럼 팔다리가 짧은 캐릭터는 `limbStretch`로 관절 사이만 늘리고, `seat`로 의자 높이·위치를 체형에 맞춥니다.
-기사 모델은 `scripts/prepare_models.mjs`로 원본(3.6MB)에서 앉은 자세 하나만 남기고 칼·방패를 빼서 200KB로 줄였습니다.
+기사·도적 모델은 `scripts/prepare_models.mjs`로 원본(각 3.6MB)에서 앉은 자세 하나만 남기고 무기를 빼서 각 200KB 정도로 줄였습니다.
 
 ### 새 캐릭터 추가하기
 
@@ -95,7 +95,7 @@ claude.ai 아티팩트처럼 파일 다운로드가 막힌 곳에서는 "저장"
 
 ## 로드맵
 
-1. **KayKit 캐릭터 더 붙이기**: 같은 팩의 바바리안·마법사·도적은 뼈대가 같아 `scripts/prepare_models.mjs`에 이름만 추가하면 됩니다.
+1. **KayKit 캐릭터 더 붙이기**: 같은 팩의 바바리안·마법사도 뼈대가 같아 `scripts/prepare_models.mjs`의 `MODELS`와 `characters.ts`에 한 줄씩 추가하면 됩니다.
 2. **악보 가져오기 확장**: MusicXML(악보 프로그램 내보내기), 악보 이미지/PDF 인식(OMR)
 3. **오디오 → 악보**: 드럼 녹음에서 타격을 검출·분류해 악보로 변환
 4. 플램·롤 같은 주법, 더블 페달, 왼손잡이 세팅, 킷별 튜닝·믹서
@@ -105,4 +105,4 @@ claude.ai 아티팩트처럼 파일 다운로드가 막힌 곳에서는 "저장"
 어쿠스틱 킷 샘플은 [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL)에서 가져왔습니다.
 CC0 1.0(퍼블릭 도메인)이라 출처 표시 없이 자유롭게 쓸 수 있습니다. 원본을 다듬은 방법은 `scripts/prepare_samples.py`에 있습니다.
 
-기사 캐릭터는 Kay Lousberg의 [KayKit Character Pack: Adventurers](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0)(CC0 1.0)입니다.
+기사·도적 캐릭터는 Kay Lousberg의 [KayKit Character Pack: Adventurers](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0)(CC0 1.0)입니다.

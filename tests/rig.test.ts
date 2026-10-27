@@ -28,17 +28,22 @@ describe('캐릭터', () => {
   }
 });
 
-describe('기사 모델 파일', () => {
-  it('앉은 자세와 IK에 필요한 뼈가 모두 들어 있다', async () => {
-    const { NodeIO } = await import('@gltf-transform/core');
-    const doc = await new NodeIO().read('public/models/knight.glb');
-    const names = new Set(doc.getRoot().listNodes().map((n) => n.getName()));
-    for (const bone of ['hips', 'spine', 'head', 'upperarm.l', 'lowerarm.l', 'wrist.l', 'upperarm.r', 'lowerarm.r', 'wrist.r',
-      'upperleg.l', 'lowerleg.l', 'foot.l', 'toes.l', 'upperleg.r', 'lowerleg.r', 'foot.r', 'toes.r']) {
-      expect(names.has(bone), bone).toBe(true);
-    }
-    const anims = doc.getRoot().listAnimations();
-    expect(anims.map((a) => a.getName())).toEqual(['Sit_Chair_Pose']);
-    expect(anims[0].listSamplers().every((s) => s.getOutput()!.getCount() > 0)).toBe(true);
-  });
+describe('KayKit 모델 파일', () => {
+  for (const name of ['knight', 'rogue']) {
+    it(`${name}: 앉은 자세와 IK에 필요한 뼈가 모두 들어 있다`, async () => {
+      const { NodeIO } = await import('@gltf-transform/core');
+      const { ALL_EXTENSIONS } = await import('@gltf-transform/extensions');
+      const doc = await new NodeIO().registerExtensions(ALL_EXTENSIONS).read(`public/models/${name}.glb`);
+      const names = new Set(doc.getRoot().listNodes().map((n) => n.getName()));
+      for (const bone of ['hips', 'spine', 'head', 'upperarm.l', 'lowerarm.l', 'wrist.l', 'upperarm.r', 'lowerarm.r', 'wrist.r',
+        'upperleg.l', 'lowerleg.l', 'foot.l', 'toes.l', 'upperleg.r', 'lowerleg.r', 'foot.r', 'toes.r']) {
+        expect(names.has(bone), bone).toBe(true);
+      }
+      const anims = doc.getRoot().listAnimations();
+      expect(anims.map((a) => a.getName())).toEqual(['Sit_Chair_Pose']);
+      expect(anims[0].listSamplers().every((s) => s.getOutput()!.getCount() > 0)).toBe(true);
+      // 무기는 빠져 있다
+      expect([...names].some((n) => /Sword|Shield|Knife|Crossbow|Throwable/.test(n))).toBe(false);
+    });
+  }
 });

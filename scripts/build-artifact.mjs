@@ -2,6 +2,7 @@
 // three.js는 jsDelivr에서 import map으로 불러오고, 앱 JS·CSS는 페이지 안에 넣는다.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { NodeIO } from '@gltf-transform/core';
+import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { join } from 'node:path';
 import { build } from 'vite';
 
@@ -56,7 +57,7 @@ console.log(`${outFile} (${(page.length / 1024).toFixed(0)} KB, three@${THREE_VE
 const samples = readdirSync('public/samples/acoustic').filter((f) => f.endsWith('.mp3'));
 console.log(`함께 올릴 파일: ${samples.length}개 → samples/acoustic/*.mp3 (public/samples/acoustic에서)`);
 // 아티팩트 호스팅은 .glb를 내주지 않으므로, 모든 데이터를 안에 넣은 glTF JSON(.json)으로 바꿔 둔다
-const io = new NodeIO();
+const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 mkdirSync(join(outDir, 'models'), { recursive: true });
 for (const f of readdirSync('public/models').filter((f) => f.endsWith('.glb'))) {
   const { json, resources } = await io.writeJSON(await io.read(join('public/models', f)));
