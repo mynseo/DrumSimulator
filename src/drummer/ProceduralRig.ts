@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { DrummerPose, StickPose } from '../motion/pose';
 import type { DrummerRig } from './DrummerRig';
+import { solveTwoBone } from './ik';
 
 export interface ProceduralStyle {
   /** 피부(고양이는 털, 로봇은 몸체) 색 */
@@ -302,8 +303,6 @@ class Limb {
   private end: THREE.Mesh | null = null;
   private mid = new THREE.Vector3();
   private endPos = new THREE.Vector3();
-  private dir = new THREE.Vector3();
-  private perp = new THREE.Vector3();
 
   constructor(rig: ProceduralRig, r0: number, r1: number, m0: THREE.Material, m1: THREE.Material, jm0: THREE.Material, jm1: THREE.Material, endRadius: number) {
     const unit = rig.geo(new THREE.CylinderGeometry(1, 1, 1, 12));
@@ -325,22 +324,9 @@ class Limb {
     for (const m of [this.a, this.b]) m.castShadow = true;
   }
 
-  /**
-   * 2관절 IK: root에서 target까지 길이 a, b인 두 마디를 놓는다.
-   * 닿지 않으면 최대한 뻗는다. pole 방향으로 가운데 관절이 굽는다.
-   * @returns 실제로 끝이 닿은 위치
-   */
+  /** 2관절 IK로 두 마디를 놓는다 (solveTwoBone 참고). @returns 실제로 끝이 닿은 위치 */
   solve(root: THREE.Vector3, target: THREE.Vector3, a: number, b: number, pole: THREE.Vector3): THREE.Vector3 {
-    this.dir.copy(target).sub(root);
-    const d = THREE.MathUtils.clamp(this.dir.length(), Math.abs(a - b) + 1e-3, a + b - 1e-4);
-    this.dir.normalize();
-    const cosA = (a * a + d * d - b * b) / (2 * a * d);
-    const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
-    this.perp.copy(pole).addScaledVector(this.dir, -pole.dot(this.dir));
-    if (this.perp.lengthSq() < 1e-6) this.perp.set(0, -1, 0);
-    this.perp.normalize();
-    this.mid.copy(root).addScaledVector(this.dir, a * cosA).addScaledVector(this.perp, a * sinA);
-    this.endPos.copy(root).addScaledVector(this.dir, d);
+    solveTwoBone(root, target, a, b, pole, this.mid, this.endPos);
 
     place(this.a, root, this.mid);
     place(this.b, this.mid, this.endPos);

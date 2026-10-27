@@ -12,6 +12,13 @@ export const LIMB_COLORS: Record<Limb, number> = {
 };
 const FEEDBACK_TIME = 0.45;
 
+/** 드럼 의자: 앉는 면의 높이와 앞뒤(Z) 위치 */
+export interface Seat {
+  height: number;
+  z: number;
+}
+export const DEFAULT_SEAT: Seat = { height: 0.51, z: 0.42 };
+
 /** 한 부품이 마지막으로 맞은 정보 (age = 맞은 뒤 지난 초) */
 export interface HitFlash {
   age: number;
@@ -41,6 +48,12 @@ export class DrumKit {
   private hihatTop!: THREE.Object3D;
   private kickBeater!: THREE.Object3D;
   private kickPedal!: THREE.Object3D;
+  private throne = new THREE.Group();
+  private throneSeat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.19, 0.17, 0.08, 32),
+    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 }),
+  );
+  private throneRod!: THREE.Mesh;
   private hatPedal!: THREE.Object3D;
 
   private shellMat = new THREE.MeshStandardMaterial({ color: 0x7a1020, metalness: 0.4, roughness: 0.35 });
@@ -324,19 +337,28 @@ export class DrumKit {
   }
 
   private buildThrone() {
-    const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.17, 0.08, 32), new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 }));
-    seat.position.set(0, 0.47, 0.42);
-    seat.castShadow = true;
-    this.root.add(seat);
-    this.root.add(this.rod(new THREE.Vector3(0, 0, 0.42), new THREE.Vector3(0, 0.43, 0.42), 0.02, this.chromeMat));
-    this.addTripod(new THREE.Vector3(0, 0, 0.42));
+    this.throneRod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1, 8), this.chromeMat);
+    this.throne.add(this.throneSeat, this.throneRod);
+    this.throneSeat.castShadow = true;
+    this.throneRod.castShadow = true;
+    this.addTripod(new THREE.Vector3(0, 0, 0), this.throne);
+    this.root.add(this.throne);
+    this.setThrone(DEFAULT_SEAT);
   }
 
-  private addTripod(base: THREE.Vector3) {
+  /** 의자 높이(앉는 면)와 앞뒤 위치. 캐릭터 체형에 맞춰 조절한다 */
+  setThrone(seat: Seat) {
+    this.throne.position.z = seat.z;
+    this.throneSeat.position.y = seat.height - 0.04;
+    this.throneRod.scale.y = seat.height - 0.08;
+    this.throneRod.position.y = (seat.height - 0.08) / 2;
+  }
+
+  private addTripod(base: THREE.Vector3, parent: THREE.Object3D = this.root) {
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2;
       const foot = base.clone().add(new THREE.Vector3(Math.cos(a) * 0.2, 0, Math.sin(a) * 0.2));
-      this.root.add(this.rod(base.clone().setY(0.2), foot, 0.007, this.chromeMat));
+      parent.add(this.rod(base.clone().setY(0.2), foot, 0.007, this.chromeMat));
     }
   }
 

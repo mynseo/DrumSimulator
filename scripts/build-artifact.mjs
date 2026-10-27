@@ -52,3 +52,5 @@ console.log(`${outFile} (${(page.length / 1024).toFixed(0)} KB, three@${THREE_VE
 // 샘플 파일은 페이지 옆에 같은 경로로 함께 올려야 한다 (페이지가 상대 경로로 불러온다)
 const samples = readdirSync('public/samples/acoustic').filter((f) => f.endsWith('.mp3'));
 console.log(`함께 올릴 파일: ${samples.length}개 → samples/acoustic/*.mp3 (public/samples/acoustic에서)`);
+const models = readdirSync('public/models').filter((f) => f.endsWith('.glb'));
+console.log(`함께 올릴 모델: ${models.map((f) => `models/${f}`).join(', ')} (public/models에서)`);

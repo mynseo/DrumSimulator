@@ -7,7 +7,8 @@ import { MotionPlanner } from '../src/motion/MotionPlanner';
 import { DrumKit } from '../src/scene/DrumKit';
 
 describe('캐릭터', () => {
-  for (const def of CHARACTERS) {
+  // 모델 파일을 불러오는 캐릭터(glTF)는 브라우저에서만 동작하므로 아래 별도 테스트에서 파일을 검사한다
+  for (const def of CHARACTERS.filter((c) => !c.model)) {
     it(`${def.name}: 연주 내내 몸이 유효한 위치에 있고 머리는 목이 돌 수 있는 범위 안에서만 돈다`, () => {
       const kit = new DrumKit();
       const planner = new MotionPlanner(kit);
@@ -25,4 +26,19 @@ describe('캐릭터', () => {
       rig.dispose();
     });
   }
+});
+
+describe('기사 모델 파일', () => {
+  it('앉은 자세와 IK에 필요한 뼈가 모두 들어 있다', async () => {
+    const { NodeIO } = await import('@gltf-transform/core');
+    const doc = await new NodeIO().read('public/models/knight.glb');
+    const names = new Set(doc.getRoot().listNodes().map((n) => n.getName()));
+    for (const bone of ['hips', 'spine', 'head', 'upperarm.l', 'lowerarm.l', 'wrist.l', 'upperarm.r', 'lowerarm.r', 'wrist.r',
+      'upperleg.l', 'lowerleg.l', 'foot.l', 'toes.l', 'upperleg.r', 'lowerleg.r', 'foot.r', 'toes.r']) {
+      expect(names.has(bone), bone).toBe(true);
+    }
+    const anims = doc.getRoot().listAnimations();
+    expect(anims.map((a) => a.getName())).toEqual(['Sit_Chair_Pose']);
+    expect(anims[0].listSamplers().every((s) => s.getOutput()!.getCount() > 0)).toBe(true);
+  });
 });

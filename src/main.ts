@@ -9,7 +9,7 @@ import type { DrummerRig } from './drummer/DrummerRig';
 import { parseMidi } from './import/midi';
 import { parseDrumTab } from './import/tab';
 import { MotionPlanner } from './motion/MotionPlanner';
-import { DrumKit } from './scene/DrumKit';
+import { DEFAULT_SEAT, DrumKit } from './scene/DrumKit';
 import { Stage, type CameraView } from './scene/Stage';
 import { LiveSticking } from './core/sticking';
 import type { Instrument } from './core/types';
@@ -59,8 +59,16 @@ let rig: DrummerRig | null = null;
 function setCharacter(id: string) {
   const def = CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
   rig?.dispose();
-  rig = def.create();
-  stage.scene.add(rig.root);
+  const created = def.create();
+  rig = created;
+  stage.scene.add(created.root);
+  kit.setThrone(created.seat ?? DEFAULT_SEAT);
+  created.loaded?.catch(() => {
+    if (rig !== created) return;
+    toast(`${def.name} 모델을 불러오지 못해 기본 캐릭터로 바꿉니다. 인터넷 연결을 확인해 주세요`);
+    characterSelect.value = CHARACTERS[0].id;
+    setCharacter(CHARACTERS[0].id);
+  });
   try {
     localStorage.setItem(CHARACTER_KEY, def.id);
   } catch {
