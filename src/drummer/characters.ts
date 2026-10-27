@@ -6,6 +6,9 @@ import { ProceduralRig } from './ProceduralRig';
  * 고를 수 있는 캐릭터 목록. 새 캐릭터는 여기에 CharacterDef 하나를 추가하면 된다.
  * 뼈대가 있는 3D 모델(glTF)은 GltfRig로 붙인다.
  */
+/** 아티팩트 빌드는 .glb를 내줄 수 없어 같은 모델을 glTF JSON으로 싣는다 (scripts/build-artifact.mjs) */
+const KNIGHT_URL = import.meta.env.VITE_TARGET === 'artifact' ? 'models/knight.json' : 'models/knight.glb';
+
 export const CHARACTERS: CharacterDef[] = [
   {
     id: 'drummer',
@@ -17,10 +20,10 @@ export const CHARACTERS: CharacterDef[] = [
     // KayKit Character Pack: Adventurers (Kay Lousberg, CC0) — scripts/prepare_models.mjs 참고
     id: 'knight',
     name: '기사 (KayKit)',
-    model: 'models/knight.glb',
+    model: KNIGHT_URL,
     create: () =>
       new GltfRig({
-        url: 'models/knight.glb',
+        url: KNIGHT_URL,
         // 원본은 키 2.3(머리만 1) 단위의 2등신: 전체를 줄이고, 짧은 팔다리는 관절 사이를 늘려
         // 드럼과 페달에 닿게 한다
         scale: 0.62,
