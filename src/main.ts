@@ -17,6 +17,22 @@ const CHARACTER_KEY = 'drumsim.character';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+// 3D를 그릴 수 없는 브라우저에서는 빈 화면 대신 안내를 보여 준다
+if (!webglAvailable()) {
+  document.body.innerHTML =
+    '<div class="fatal">이 브라우저에서는 3D 그래픽(WebGL)을 사용할 수 없습니다.<br />최신 Chrome, Edge, Safari, Firefox에서 열어 주세요.</div>';
+  throw new Error('WebGL unavailable');
+}
+
+function webglAvailable(): boolean {
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch {
+    return false;
+  }
+}
+
 // ---- 상태 ----
 let score: Score = loadScore() ?? cloneScore(PRESETS[1].score);
 let timeline: Timeline = buildTimeline(score);

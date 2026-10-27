@@ -5,7 +5,7 @@ import type { Hand, Instrument, Score, ScoreNote, Timeline } from '../core/types
 /**
  * 격자형 악보 편집기.
  *   클릭: 없음 → 보통 → 악센트 → 고스트 → 없음
- *   우클릭: 손 지정 (자동 → R → L → 자동)
+ *   우클릭(터치: 길게 누르기): 손 지정 (자동 → R → L → 자동)
  * 각 칸에는 자동/지정된 손(R/L)이 표시된다.
  */
 export class Editor {
@@ -57,8 +57,12 @@ export class Editor {
         el.dataset.kind = inst.kind;
         el.addEventListener('mousedown', (e) => {
           e.preventDefault();
-          if (e.button === 2) this.cycleHand(s, inst.id);
-          else if (e.button === 0) this.cycleVelocity(s, inst.id);
+          if (e.button === 0) this.cycleVelocity(s, inst.id);
+        });
+        // 우클릭, 또는 터치 화면에서 길게 누르기
+        el.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          this.cycleHand(s, inst.id);
         });
         grid.appendChild(el);
         this.cells.set(`${s}:${inst.id}`, el);

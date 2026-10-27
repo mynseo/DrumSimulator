@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Drum Simulator</title>
+    <meta name="description" content="악보를 넣으면 3D 드러머가 실시간으로 연주하는 웹 드럼 시뮬레이터" />
+    <meta name="theme-color" content="#0e0f13" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="Drum Simulator" />
+    <meta property="og:description" content="악보를 넣으면 3D 드러머가 실시간으로 연주하는 웹 드럼 시뮬레이터" />
+    <meta property="og:type" content="website" />
   </head>
   <body>
     <header class="toolbar">
@@ -54,7 +60,7 @@
         </div>
       </div>
       <section id="editor-wrap">
-        <div class="hint">클릭: 음 추가 → 악센트 → 고스트 → 삭제 · 우클릭: 손 지정(자동 → R → L) · 머리줄 클릭: 그 위치로 이동 · Space: 재생/정지</div>
+        <div class="hint">클릭: 음 추가 → 악센트 → 고스트 → 삭제 · 우클릭/길게 누르기: 손 지정(자동 → R → L) · 머리줄 클릭: 그 위치로 이동 · Space: 재생/정지</div>
         <div id="editor"></div>
       </section>
     </main>
@@ -74,6 +80,6 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
       </form>
     </dialog>
     <div id="toast"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
