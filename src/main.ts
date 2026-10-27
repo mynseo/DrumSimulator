@@ -14,6 +14,7 @@ import { Stage, type CameraView } from './scene/Stage';
 import { LiveSticking } from './core/sticking';
 import type { Instrument } from './core/types';
 import { LiveMotion } from './motion/LiveMotion';
+import { chips, popovers } from './ui/controls';
 import { Editor } from './ui/Editor';
 import { instrumentForKey, Pads } from './ui/Pads';
 import { SamplesDialog } from './ui/SamplesDialog';
@@ -58,6 +59,7 @@ const liveSticking = new LiveSticking();
 let rig: DrummerRig | null = null;
 function setCharacter(id: string) {
   const def = CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
+  characterChips.setActive(def.id);
   rig?.dispose();
   const created = def.create();
   rig = created;
@@ -65,8 +67,7 @@ function setCharacter(id: string) {
   kit.setThrone(created.seat ?? DEFAULT_SEAT);
   created.loaded?.catch(() => {
     if (rig !== created) return;
-    toast(`${def.name} 모델을 불러오지 못해 기본 캐릭터로 바꿉니다. 인터넷 연결을 확인해 주세요`);
-    characterSelect.value = CHARACTERS[0].id;
+    toast(`${def.name}을(를) 못 불러왔어요`);
     setCharacter(CHARACTERS[0].id);
   });
   try {
@@ -99,18 +100,20 @@ const spbSelect = $<HTMLSelectElement>('spb');
 const loopInput = $<HTMLInputElement>('loop');
 const metroInput = $<HTMLInputElement>('metro');
 const presetSelect = $<HTMLSelectElement>('preset');
-const characterSelect = $<HTMLSelectElement>('character');
 const fileInput = $<HTMLInputElement>('file');
 
 function syncToolbar() {
   bpmInput.value = String(score.bpm);
   barsInput.value = String(score.bars);
   spbSelect.value = String(score.stepsPerBeat);
-  $('title').textContent = score.title;
+  // 곡 고르기 메뉴의 첫 줄이 지금 곡 이름이다
+  presetSelect.options[0].textContent = score.title;
+  presetSelect.value = '';
 }
 
 function updatePlayButton() {
-  playBtn.textContent = transport.playing ? '❚❚ 일시정지' : '▶ 재생';
+  playBtn.textContent = transport.playing ? '❚❚' : '▶';
+  playBtn.setAttribute('aria-label', transport.playing ? '일시정지' : '재생');
 }
 
 async function togglePlay() {
@@ -155,18 +158,20 @@ loopInput.addEventListener('change', () => (transport.loop = loopInput.checked))
 metroInput.addEventListener('change', () => (transport.metronome = metroInput.checked));
 
 // ---- 사운드 ----
-const kitSelect = $<HTMLSelectElement>('kit');
 const kitEdit = $<HTMLButtonElement>('kit-edit');
 const samplesDialog = new SamplesDialog($<HTMLDialogElement>('samples-dialog'), $('samples-list'), $<HTMLInputElement>('sample-file'));
 samplesDialog.onPreview = (instrument) => transport.playNow(instrument, 0.8);
 samplesDialog.onError = toast;
 
-kitSelect.innerHTML = SOUND_KITS.map((k) => `<option value="${k.id}" title="${k.description}">${k.name}</option>`).join('');
+const kitChips = chips($('kit-list'), SOUND_KITS, async (id) => {
+  await selectKit(id);
+  if (id === customKit.id && customKit.samples.size === 0) samplesDialog.open();
+  else transport.playNow('snare', 0.8); // 고른 소리를 바로 들려준다
+});
 
 async function selectKit(id: string) {
   const kit = findKit(id);
-  kitSelect.value = kit.id;
-  kitSelect.title = kit.description;
+  kitChips.setActive(kit.id);
   kitEdit.hidden = kit.id !== customKit.id;
   try {
     localStorage.setItem(KIT_KEY, kit.id);
@@ -176,27 +181,30 @@ async function selectKit(id: string) {
   try {
     await transport.setKit(kit.id);
   } catch {
-    toast(`${kit.name} 소리를 불러오지 못해 기본 합성 소리로 연주합니다. 인터넷 연결을 확인해 주세요`);
+    toast(`${kit.name} 소리를 못 불러와서 기본 소리로 칠게요`);
   }
 }
 
-kitSelect.addEventListener('change', async () => {
-  await selectKit(kitSelect.value);
-  if (kitSelect.value === customKit.id && customKit.samples.size === 0) samplesDialog.open();
-  else transport.playNow('snare', 0.8); // 고른 소리를 바로 들려준다
-});
 kitEdit.addEventListener('click', () => samplesDialog.open());
 $<HTMLInputElement>('volume').addEventListener('input', (e) => (transport.volume = Number((e.target as HTMLInputElement).value)));
 
-presetSelect.innerHTML = '<option value="">예제 불러오기…</option>' + PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('');
+presetSelect.innerHTML =
+  '<option value=""></option><optgroup label="다른 곡">' + PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('') + '</optgroup>';
 presetSelect.addEventListener('change', () => {
   const p = PRESETS[Number(presetSelect.value)];
-  presetSelect.value = '';
   if (p) setScore(p.make ? p.make() : cloneScore(p.score));
+  else syncToolbar();
 });
 
-characterSelect.innerHTML = CHARACTERS.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
-characterSelect.addEventListener('change', () => setCharacter(characterSelect.value));
+const characterChips = chips($('character-list'), CHARACTERS, (id) => setCharacter(id));
+popovers();
+
+for (const [id, delta] of [['bpm-down', -1], ['bpm-up', 1]] as const) {
+  $(id).addEventListener('click', () => {
+    bpmInput.value = String(score.bpm + delta);
+    bpmInput.dispatchEvent(new Event('change'));
+  });
+}
 
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) =>
   b.addEventListener('click', () => stage.setView(b.dataset.view as CameraView)),
@@ -213,16 +221,16 @@ fileInput.addEventListener('change', async () => {
     if (/\.midi?$/i.test(file.name)) {
       const { score: s, skipped } = parseMidi(await file.arrayBuffer(), name);
       setScore(s);
-      toast(`MIDI를 불러왔습니다: ${s.notes.length}개 음${skipped ? `, 지원하지 않는 음 ${skipped}개 제외` : ''}`);
+      toast(`${s.notes.length}개 음을 불러왔어요${skipped ? ` (${skipped}개는 건너뜀)` : ''}`);
     } else if (/\.json$/i.test(file.name)) {
       setScore(validateScore(JSON.parse(await file.text())));
-      toast('악보를 불러왔습니다');
+      toast('불러왔어요');
     } else {
       setScore(parseDrumTab(await file.text(), name, score.bpm));
-      toast('드럼 탭을 불러왔습니다');
+      toast('불러왔어요');
     }
   } catch (e) {
-    toast(`불러오기 실패: ${(e as Error).message}`);
+    toast(`못 불러왔어요: ${(e as Error).message}`);
   }
 });
 
@@ -232,9 +240,9 @@ tabDialog.addEventListener('close', () => {
   if (tabDialog.returnValue !== 'ok') return;
   try {
     setScore(parseDrumTab($<HTMLTextAreaElement>('tab-text').value, '드럼 탭', score.bpm));
-    toast('드럼 탭을 불러왔습니다');
+    toast('불러왔어요');
   } catch (e) {
-    toast(`불러오기 실패: ${(e as Error).message}`);
+    toast(`못 불러왔어요: ${(e as Error).message}`);
   }
 });
 
@@ -244,9 +252,9 @@ $('export').addEventListener('click', async () => {
   if (import.meta.env.VITE_TARGET === 'artifact') {
     try {
       await navigator.clipboard.writeText(json);
-      toast('악보 JSON을 클립보드에 복사했습니다. 메모장에 붙여 넣어 .json으로 저장하세요');
+      toast('악보를 복사했어요 (메모장에 붙여 .json으로 저장)');
     } catch {
-      toast('클립보드에 복사하지 못했습니다');
+      toast('복사하지 못했어요');
     }
     return;
   }
@@ -309,7 +317,7 @@ function record(instrument: Instrument, velocity: number) {
 recInput.addEventListener('change', () => {
   if (recInput.checked && !transport.playing) {
     togglePlay();
-    toast('녹음 중: 반복 재생에 맞춰 치면 악보에 들어갑니다');
+    toast('녹음 중');
   }
 });
 
@@ -410,8 +418,7 @@ try {
 } catch {
   /* 저장 불가 환경 */
 }
-characterSelect.value = CHARACTERS.some((c) => c.id === savedCharacter) ? savedCharacter! : CHARACTERS[0].id;
-setCharacter(characterSelect.value);
+setCharacter(CHARACTERS.some((c) => c.id === savedCharacter) ? savedCharacter! : CHARACTERS[0].id);
 let savedPanel: string | null = null;
 try {
   savedPanel = localStorage.getItem(PANEL_KEY);

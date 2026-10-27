@@ -10,32 +10,60 @@
     <meta property="og:title" content="Drum Simulator" />
     <meta property="og:description" content="악보를 넣으면 3D 드러머가 실시간으로 연주하는 웹 드럼 시뮬레이터" />
     <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <header class="toolbar">
-      <div class="group">
-        <button id="play" class="primary" title="재생 / 일시정지 (Space)">▶ 재생</button>
-        <button id="stop" title="처음으로">■</button>
-        <label>BPM <input id="bpm" type="number" min="30" max="300" step="1" /></label>
-        <label>마디 <input id="bars" type="number" min="1" max="128" step="1" /></label>
-        <label>박 분할
+    <header class="topbar">
+      <div class="transport">
+        <button id="play" class="play" aria-label="재생">▶</button>
+        <button id="stop" class="icon" aria-label="처음으로">■</button>
+        <div class="bpm">
+          <button id="bpm-down" class="icon small" aria-label="느리게">−</button>
+          <input id="bpm" type="number" min="30" max="300" step="1" aria-label="BPM" />
+          <button id="bpm-up" class="icon small" aria-label="빠르게">+</button>
+          <span class="unit">BPM</span>
+        </div>
+      </div>
+      <div class="menus">
+        <button class="pill" data-popover="pop-sound" aria-label="소리">
+          <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7" /></svg>
+          <span>소리</span>
+        </button>
+        <button class="pill" data-popover="pop-character" aria-label="캐릭터">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><circle cx="9" cy="10.5" r="0.9" class="fill" /><circle cx="15" cy="10.5" r="0.9" class="fill" /><path d="M8.5 14.5c1.8 1.8 5.2 1.8 7 0" /></svg>
+          <span>캐릭터</span>
+        </button>
+        <button class="pill" data-popover="pop-more" aria-label="더보기">
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" class="fill" /><circle cx="12" cy="12" r="1.6" class="fill" /><circle cx="19" cy="12" r="1.6" class="fill" /></svg>
+        </button>
+      </div>
+
+      <div id="pop-sound" class="popover" hidden>
+        <div id="kit-list" class="chips"></div>
+        <button id="kit-edit" class="ghost" hidden>내 샘플 넣기</button>
+        <label class="row">볼륨 <input id="volume" type="range" min="0" max="1.2" step="0.05" value="0.8" /></label>
+      </div>
+      <div id="pop-character" class="popover" hidden>
+        <div id="character-list" class="chips"></div>
+      </div>
+      <div id="pop-more" class="popover" hidden>
+        <div class="grid2">
+          <button id="import" class="ghost">파일 열기</button>
+          <button id="tab" class="ghost">드럼 탭</button>
+          <button id="export" class="ghost">저장</button>
+        </div>
+        <label class="row">마디 <input id="bars" type="number" min="1" max="128" step="1" /></label>
+        <label class="row">박 나눔
           <select id="spb">
-            <option value="4">16분음표</option>
+            <option value="4">16분</option>
             <option value="3">셋잇단</option>
-            <option value="2">8분음표</option>
+            <option value="2">8분</option>
           </select>
         </label>
-        <label class="check"><input id="loop" type="checkbox" checked /> 반복</label>
-        <label class="check"><input id="metro" type="checkbox" /> 메트로놈</label>
-        <label>사운드 <select id="kit"></select></label>
-        <button id="kit-edit" hidden title="악기마다 내 오디오 파일 넣기">샘플 넣기</button>
-        <label>볼륨 <input id="volume" type="range" min="0" max="1.2" step="0.05" value="0.8" /></label>
-      </div>
-      <div class="group">
-        <select id="preset" title="예제 악보"></select>
-        <button id="import" title="MIDI(.mid), 드럼 탭(.txt), 악보 파일(.json) 불러오기">불러오기</button>
-        <button id="tab" title="텍스트 드럼 탭 붙여넣기">탭 붙여넣기</button>
-        <button id="export" title="악보를 JSON 파일로 저장">저장</button>
+        <label class="row switch">반복 <input id="loop" type="checkbox" checked /></label>
+        <label class="row switch">메트로놈 <input id="metro" type="checkbox" /></label>
         <input id="file" type="file" accept=".mid,.midi,.txt,.json" hidden />
       </div>
     </header>
@@ -43,34 +71,23 @@
     <main>
       <div id="viewport">
         <div class="overlay top-left">
-          <div id="title" class="title"></div>
-          <div id="position" class="position">1 : 1</div>
+          <select id="preset" class="song" aria-label="곡"></select>
+          <div id="position" class="position"></div>
         </div>
-        <div class="overlay top-right">
-          <label>캐릭터 <select id="character"></select></label>
-          <div class="views">
-            <button data-view="front">정면</button>
-            <button data-view="side">측면</button>
-            <button data-view="top">위</button>
-            <button data-view="drummer">드러머 시점</button>
-          </div>
-        </div>
-        <div class="overlay bottom-left legend">
-          <span><i class="rh"></i>오른손</span>
-          <span><i class="lh"></i>왼손</span>
-          <span><i class="rf"></i>오른발</span>
-          <span><i class="lf"></i>왼발</span>
+        <div class="overlay bottom-right views">
+          <button data-view="front">정면</button>
+          <button data-view="side">옆</button>
+          <button data-view="top">위</button>
+          <button data-view="drummer">시점</button>
         </div>
       </div>
       <section id="editor-wrap">
         <div class="panel-bar">
           <div class="tabs" role="tablist">
             <button id="tab-score" role="tab" data-panel="score" aria-selected="true">악보</button>
-            <button id="tab-pads" role="tab" data-panel="pads" aria-selected="false">드럼 패드</button>
+            <button id="tab-pads" role="tab" data-panel="pads" aria-selected="false">패드</button>
           </div>
-          <div class="hint" data-for="score">클릭: 음 추가 → 악센트 → 고스트 → 삭제 · 우클릭/길게 누르기: 손 지정(자동 → R → L) · 머리줄 클릭: 그 위치로 이동 · Space: 재생/정지</div>
-          <div class="hint" data-for="pads" hidden><span class="kbd-only">패드를 클릭하거나 키보드로 연주하세요 · Shift+키: 악센트 · </span>가운데를 칠수록 세게</div>
-          <label class="check rec" data-for="pads" hidden title="재생 중에 친 음을 가장 가까운 칸에 맞춰 악보에 넣습니다"><input id="rec" type="checkbox" /> ● 녹음</label>
+          <label class="rec" data-for="pads" hidden><input id="rec" type="checkbox" /> 녹음</label>
         </div>
         <div id="editor"></div>
         <div id="pads" hidden></div>
@@ -79,26 +96,24 @@
 
     <dialog id="tab-dialog">
       <form method="dialog">
-        <h3>드럼 탭 붙여넣기</h3>
-        <p>한 줄에 악기 하나, 마디는 <code>|</code>로 구분합니다. HH 줄의 <code>o</code>는 오픈 하이햇입니다.</p>
-        <textarea id="tab-text" spellcheck="false" rows="10">C |x---------------|----------------|
+        <h3>드럼 탭</h3>
+        <textarea id="tab-text" spellcheck="false" rows="8">C |x---------------|----------------|
 HH|--x-x-x-x-x-x-x-|x-x-x-x-x-x-o---|
 S |----o-------o---|----o-------o-oo|
 B |o-------o-o-----|o-------o-o-----|</textarea>
         <div class="actions">
-          <button value="cancel">취소</button>
-          <button id="tab-ok" value="ok" class="primary">가져오기</button>
+          <button value="cancel" class="ghost">취소</button>
+          <button id="tab-ok" value="ok" class="primary">넣기</button>
         </div>
       </form>
     </dialog>
     <dialog id="samples-dialog">
       <form method="dialog">
         <h3>내 샘플</h3>
-        <p>악기마다 오디오 파일(wav, mp3, m4a, ogg)을 넣으세요. 비워 둔 악기는 어쿠스틱 소리로 연주합니다. 파일은 이 브라우저에만 저장되고 어디로도 보내지 않습니다.</p>
         <div id="samples-list" class="samples-list"></div>
         <input id="sample-file" type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff" hidden />
         <div class="actions">
-          <button value="close" class="primary">닫기</button>
+          <button value="close" class="primary">완료</button>
         </div>
       </form>
     </dialog>

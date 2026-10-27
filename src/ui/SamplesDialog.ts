@@ -43,13 +43,13 @@ export class SamplesDialog {
       name.textContent = inst.label;
       const file = document.createElement('span');
       file.className = `file${s ? ' set' : ''}`;
-      file.textContent = s ? s.name : '어쿠스틱 소리';
+      file.textContent = s ? s.name : '기본';
       file.title = file.textContent;
 
       const actions = document.createElement('span');
       actions.className = 'row-actions';
       actions.append(
-        button('파일 선택', () => {
+        button('파일', () => {
           this.target = inst.id;
           this.fileInput.click();
         }),
@@ -82,7 +82,7 @@ export class SamplesDialog {
       this.render();
       this.onPreview?.(instrument);
     } catch {
-      this.onError?.(`${file.name}: 재생할 수 없는 오디오 파일입니다. wav나 mp3로 바꿔서 넣어 보세요`);
+      this.onError?.(`${file.name}은(는) 열 수 없어요. wav나 mp3로 넣어 주세요`);
     }
   }
 }

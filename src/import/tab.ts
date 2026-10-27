@@ -32,7 +32,7 @@ export function parseDrumTab(text: string, title = '드럼 탭 가져오기', bp
     if (measures.length) current.push({ instrument: label, measures });
   }
   if (current.length) blocks.push(current);
-  if (!blocks.length) throw new Error('드럼 탭 줄을 찾지 못했습니다. 예: "HH|x-x-x-x-x-x-x-x-|"');
+  if (!blocks.length) throw new Error('드럼 탭을 못 찾았어요');
 
   const lengths = blocks.flatMap((b) => b.flatMap((l) => l.measures.map((s) => s.length)));
   const triplet = lengths.every((n) => n % 3 === 0 && 16 % n !== 0 && n % 16 !== 0);

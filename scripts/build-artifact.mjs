@@ -36,6 +36,9 @@ const body = html.match(/<body>([\s\S]*)<\/body>/)[1].replace(/<script[^>]*src=[
 const importMap = { imports: { three: `${CDN}/build/three.module.min.js`, 'three/examples/jsm/': `${CDN}/examples/jsm/` } };
 
 const page = `<title>Drum Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
 <meta name="claude:viewport-fit-sides" content="cover" />
 <meta name="description" content="악보를 넣으면 3D 드러머가 실시간으로 연주하는 웹 드럼 시뮬레이터" />
 <style>
