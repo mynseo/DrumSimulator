@@ -2,6 +2,13 @@ import type { Instrument, Timeline } from '../core/types';
 import { AudioEngine, DEFAULT_KIT, findKit } from './AudioEngine';
 
 const LOOKAHEAD = 0.12;
+
+/** 악보와 함께 트는 원곡. 악보 0번 칸 = 음원의 offset초, 음원의 원래 빠르기 = bpm */
+export interface BackingTrack {
+  buffer: AudioBuffer;
+  offset: number;
+  bpm: number;
+}
 const TICK_MS = 25;
 
 /**
@@ -23,6 +30,12 @@ export class Transport {
   /** 여기까지(반복을 펼친 노래 시각) 예약 완료 */
   private scheduledUntil = 0;
   private pausedAt = 0;
+  private backing: BackingTrack | null = null;
+  private backingGain: GainNode | null = null;
+  private backingVol = 0.8;
+  private backingSources: AudioBufferSourceNode[] = [];
+  /** 다음 예약 때 지금 위치부터 원곡을 틀어야 한다 */
+  private backingNeedsStart = false;
 
   constructor(private timeline: Timeline) {}
 
@@ -43,6 +56,9 @@ export class Transport {
       this.synth = new AudioEngine(this.ctx);
       this.synth.kit = findKit(this.kitId);
       this.synth.volume = this.vol;
+      this.backingGain = this.ctx.createGain();
+      this.backingGain.gain.value = this.backingVol;
+      this.backingGain.connect(this.ctx.destination);
     }
     if (this.ctx.state !== 'running') void this.ctx.resume();
     return this.ctx;
@@ -62,6 +78,21 @@ export class Transport {
   set volume(v: number) {
     this.vol = v;
     if (this.synth) this.synth.volume = v;
+  }
+
+  /** 원곡을 붙이거나(null이면) 뗀다 */
+  setBacking(backing: BackingTrack | null) {
+    this.backing = backing;
+    this.restartBacking();
+  }
+
+  get hasBacking() {
+    return this.backing !== null;
+  }
+
+  set backingVolume(v: number) {
+    this.backingVol = v;
+    if (this.backingGain) this.backingGain.gain.value = v;
   }
 
   /** 직접 연주: 지금 바로 소리를 낸다 */
@@ -88,6 +119,7 @@ export class Transport {
     const from = this.pausedAt >= this.timeline.duration ? 0 : this.pausedAt;
     this.startTime = ctx.currentTime + 0.05 - from;
     this.scheduledUntil = from;
+    this.backingNeedsStart = true;
     this.timer = window.setInterval(() => this.schedule(), TICK_MS);
     this.schedule();
   }
@@ -108,6 +140,7 @@ export class Transport {
     if (this.playing && this.ctx) {
       this.startTime = this.ctx.currentTime - pos;
       this.scheduledUntil = pos;
+      this.restartBacking();
     } else {
       this.pausedAt = pos;
     }
@@ -125,6 +158,8 @@ export class Transport {
       const ahead = this.scheduledUntil - (this.ctx.currentTime - this.startTime);
       this.startTime = this.ctx.currentTime - next;
       this.scheduledUntil = next + Math.max(0, ahead) * (timeline.duration / (old.duration || 1));
+      // 음 하나를 고치는 정도면 원곡은 그대로 두고, 빠르기·길이가 바뀌었을 때만 다시 맞춘다
+      if (old.duration !== timeline.duration) this.restartBacking();
     } else {
       this.pausedAt = next;
     }
@@ -133,6 +168,61 @@ export class Transport {
   private halt() {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
+    this.stopBacking();
+  }
+
+  private stopBacking() {
+    for (const s of this.backingSources) {
+      try {
+        s.stop();
+      } catch {
+        /* 이미 멈춤 */
+      }
+    }
+    this.backingSources = [];
+  }
+
+  private restartBacking() {
+    this.stopBacking();
+    this.backingNeedsStart = this.playing;
+  }
+
+  /**
+   * 노래 시각 t(반복을 펼친 값)부터 그 반복이 끝날 때까지 원곡 구간을 예약한다.
+   * 악보 빠르기가 원곡과 다르면 재생 속도를 같은 비율로 바꿔 박을 맞춘다.
+   */
+  private startBacking(t: number) {
+    const b = this.backing;
+    if (!b || !this.ctx || !this.backingGain) return;
+    const { duration, stepDuration, stepsPerBeat } = this.timeline;
+    const rate = 60 / (stepDuration * stepsPerBeat) / b.bpm;
+    const loopStart = this.loop ? Math.floor(t / duration) * duration : 0;
+    const p = t - loopStart;
+    if (p >= duration) return;
+    let when = this.startTime + t;
+    let audioAt = b.offset + p * rate;
+    let length = (duration - p) * rate;
+    // 이미 지난 시각이면 늦은 만큼 건너뛴다
+    const late = this.ctx.currentTime - when;
+    if (late > 0) {
+      when += late;
+      audioAt += late * rate;
+      length -= late * rate;
+    }
+    // 원곡이 악보보다 늦게 시작하면(앞부분이 비면) 그만큼 기다렸다가 튼다
+    if (audioAt < 0) {
+      when += -audioAt / rate;
+      length += audioAt;
+      audioAt = 0;
+    }
+    if (length <= 0 || audioAt >= b.buffer.duration) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = b.buffer;
+    src.playbackRate.value = rate;
+    src.connect(this.backingGain);
+    src.start(when, audioAt, length);
+    this.backingSources.push(src);
+    src.onended = () => (this.backingSources = this.backingSources.filter((x) => x !== src));
   }
 
   private wrap(t: number): number {
@@ -155,11 +245,17 @@ export class Transport {
     }
 
     const from = this.scheduledUntil;
+    if (this.backingNeedsStart) {
+      this.backingNeedsStart = false;
+      this.startBacking(from);
+    }
     if (until <= from) return;
     const firstLoop = Math.floor(from / duration);
     const lastLoop = this.loop ? Math.floor(until / duration) : 0;
     for (let k = firstLoop; k <= lastLoop; k++) {
       const offset = k * duration;
+      // 반복이 새로 시작될 때 원곡도 처음부터 (지금 위치에서 이미 튼 구간은 제외)
+      if (offset > from && offset < until) this.startBacking(offset);
       for (const h of hits) {
         const t = h.time + offset;
         if (t >= from && t < until) this.synth.play(h.instrument, this.startTime + t, h.velocity);

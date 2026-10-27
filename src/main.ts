@@ -1,11 +1,12 @@
 import './style.css';
 import { customKit, DEFAULT_KIT, findKit, SOUND_KITS } from './audio/AudioEngine';
-import { Transport } from './audio/Transport';
+import { Transport, type BackingTrack } from './audio/Transport';
 import { cloneScore, PRESETS } from './core/presets';
 import { buildTimeline, stepsPerBar } from './core/timeline';
 import type { Score, Timeline } from './core/types';
 import { CHARACTERS } from './drummer/characters';
 import type { DrummerRig } from './drummer/DrummerRig';
+import { drumsFromAudioFile, isAudioFile } from './import/audioFile';
 import { parseMidi } from './import/midi';
 import { parseDrumTab } from './import/tab';
 import { MotionPlanner } from './motion/MotionPlanner';
@@ -87,8 +88,11 @@ function scoreChanged({ rerender = false } = {}) {
   saveScore();
 }
 
-function setScore(next: Score) {
+/** 악보를 통째로 바꾼다. 음원에서 뽑은 악보만 원곡을 함께 튼다 */
+function setScore(next: Score, backing: BackingTrack | null = null) {
   score = next;
+  transport.setBacking(backing);
+  $('backing-row').hidden = !backing;
   scoreChanged({ rerender: true });
 }
 
@@ -187,6 +191,7 @@ async function selectKit(id: string) {
 
 kitEdit.addEventListener('click', () => samplesDialog.open());
 $<HTMLInputElement>('volume').addEventListener('input', (e) => (transport.volume = Number((e.target as HTMLInputElement).value)));
+$<HTMLInputElement>('backing-volume').addEventListener('input', (e) => (transport.backingVolume = Number((e.target as HTMLInputElement).value)));
 
 presetSelect.innerHTML =
   '<option value=""></option><optgroup label="다른 곡">' + PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('') + '</optgroup>';
@@ -218,7 +223,14 @@ fileInput.addEventListener('change', async () => {
   if (!file) return;
   const name = file.name.replace(/\.[^.]+$/, '');
   try {
-    if (/\.midi?$/i.test(file.name)) {
+    if (isAudioFile(file)) {
+      toast('드럼 찾는 중…', 0);
+      const { analysis, backing } = await drumsFromAudioFile(file, (p) => toast(`드럼 찾는 중… ${Math.round(p * 100)}%`, 0));
+      transport.stop();
+      updatePlayButton();
+      setScore(analysis.score, backing);
+      toast(`드럼을 뽑았어요 · ${analysis.score.bpm} BPM`);
+    } else if (/\.midi?$/i.test(file.name)) {
       const { score: s, skipped } = parseMidi(await file.arrayBuffer(), name);
       setScore(s);
       toast(`${s.notes.length}개 음을 불러왔어요${skipped ? ` (${skipped}개는 건너뜀)` : ''}`);
@@ -403,12 +415,13 @@ function clampInt(v: string, min: number, max: number, fallback: number) {
 }
 
 let toastTimer = 0;
-function toast(msg: string) {
+/** 짧은 알림. ms = 0이면 다음 알림이 올 때까지 둔다 */
+function toast(msg: string, ms = 3000) {
   const el = $('toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el.classList.remove('show'), 3000);
+  if (ms > 0) toastTimer = window.setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // ---- 시작 ----

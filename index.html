@@ -44,6 +44,7 @@
         <div id="kit-list" class="chips"></div>
         <button id="kit-edit" class="ghost" hidden>내 샘플 넣기</button>
         <label class="row">볼륨 <input id="volume" type="range" min="0" max="1.2" step="0.05" value="0.8" /></label>
+        <label id="backing-row" class="row" hidden>원곡 <input id="backing-volume" type="range" min="0" max="1.2" step="0.05" value="0.8" /></label>
       </div>
       <div id="pop-character" class="popover" hidden>
         <div id="character-list" class="chips"></div>
@@ -64,7 +65,7 @@
         </label>
         <label class="row switch">반복 <input id="loop" type="checkbox" checked /></label>
         <label class="row switch">메트로놈 <input id="metro" type="checkbox" /></label>
-        <input id="file" type="file" accept=".mid,.midi,.txt,.json" hidden />
+        <input id="file" type="file" accept=".mid,.midi,.txt,.json,audio/*,.mp3,.wav,.m4a,.ogg,.flac" hidden />
       </div>
     </header>
 
