@@ -17,7 +17,7 @@ import type { Instrument } from './core/types';
 import { LiveMotion } from './motion/LiveMotion';
 import { chips, popovers } from './ui/controls';
 import { Editor } from './ui/Editor';
-import { instrumentForKey, Pads } from './ui/Pads';
+import { instrumentForKey, PADS, Pads } from './ui/Pads';
 import { SamplesDialog } from './ui/SamplesDialog';
 
 const STORAGE_KEY = 'drumsim.score.v1';
@@ -332,6 +332,13 @@ recInput.addEventListener('change', () => {
     toast('녹음 중');
   }
 });
+
+// ---- 사용법 ----
+const helpDialog = $<HTMLDialogElement>('help-dialog');
+$('help-keys').innerHTML = PADS.map(
+  (p) => `<span>${p.keys.map((k) => `<kbd>${k.replace(/^Key/, '')}</kbd>`).join('')} ${p.name}</span>`,
+).join('');
+$('help').addEventListener('click', () => helpDialog.showModal());
 
 // ---- 아래 패널: 악보 / 드럼 패드 ----
 const panel = $('editor-wrap');

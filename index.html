@@ -88,6 +88,8 @@
             <button id="tab-score" role="tab" data-panel="score" aria-selected="true">악보</button>
             <button id="tab-pads" role="tab" data-panel="pads" aria-selected="false">패드</button>
           </div>
+          <button id="help" class="help-btn" aria-label="사용법">?</button>
+          <span class="spacer"></span>
           <label class="rec" data-for="pads" hidden><input id="rec" type="checkbox" /> 녹음</label>
         </div>
         <div id="editor"></div>
@@ -115,6 +117,40 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
         <input id="sample-file" type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff" hidden />
         <div class="actions">
           <button value="close" class="primary">완료</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="help-dialog">
+      <form method="dialog">
+        <h3>사용법</h3>
+        <section>
+          <h4>악보</h4>
+          <ul class="help-list">
+            <li><b>칸 누르기</b> 음 넣기 → 세게 → 약하게 → 지우기</li>
+            <li><b>길게 누르기 · 우클릭</b> 칠 손 정하기 (자동 → 오른손 → 왼손)</li>
+            <li><b>맨 위 숫자 줄</b> 그 자리로 이동</li>
+            <li class="kbd-only"><b>Space</b> 재생 / 멈춤</li>
+          </ul>
+          <div class="legend">
+            <span><i style="background: var(--rh)"></i>오른손</span>
+            <span><i style="background: var(--lh)"></i>왼손</span>
+            <span><i style="background: var(--rf)"></i>오른발</span>
+            <span><i style="background: var(--lf)"></i>왼발</span>
+          </div>
+        </section>
+        <section>
+          <h4>패드</h4>
+          <ul class="help-list">
+            <li><b>패드 치기</b> 가운데일수록 세게</li>
+            <li><b>녹음</b> 켜고 치면 박에 맞춰 악보에 들어가요</li>
+          </ul>
+          <div class="kbd-only">
+            <p class="help-sub">키보드 · Shift를 누르고 치면 세게</p>
+            <div id="help-keys" class="help-keys"></div>
+          </div>
+        </section>
+        <div class="actions">
+          <button value="close" class="primary">알겠어요</button>
         </div>
       </form>
     </dialog>
