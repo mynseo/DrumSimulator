@@ -281,7 +281,7 @@ export class ProceduralRig implements DrummerRig {
 
   /**
    * 병맛 록커: 금발 긴 머리를 한쪽으로 쫙 넘겨 한쪽 눈을 덮고, 뒷머리는 어깨까지 늘어진다.
-   * 입은 소리 지르듯 크게 벌리고 혀를 내밀었다. 머리카락은 머리 꼭대기를 축으로 따로 출렁인다.
+   * 입은 소리 지르듯 크게 벌렸다. 머리카락은 머리 꼭대기를 축으로 따로 출렁인다.
    */
   private buildRocker(skin: THREE.Material) {
     void skin;
@@ -311,16 +311,12 @@ export class ProceduralRig implements DrummerRig {
     put(ball, [-0.12, HEAD_LIFT - 0.17, -0.02], [0.06, 0.2, 0.08], [0, 0, 0.25]);
     put(ball, [0.13, HEAD_LIFT - 0.2, -0.03], [0.065, 0.22, 0.08], [0, 0, -0.3]);
 
-    // 소리 지르는 입 + 내민 혀
+    // 소리 지르는 입
     const mouth = new THREE.Group();
     mouth.position.set(-0.025, HEAD_LIFT - 0.07, HEAD_R * 0.88);
     const hole = new THREE.Mesh(this.geo(new THREE.SphereGeometry(1, 16, 12)), this.mat(0x3a0d16, 0.6));
     hole.scale.set(0.038, 0.032, 0.02);
-    const tongue = new THREE.Mesh(this.geo(new THREE.SphereGeometry(1, 16, 12)), this.mat(0xff6f91, 0.5));
-    tongue.scale.set(0.022, 0.03, 0.014);
-    tongue.position.set(0.004, -0.03, 0.012);
-    tongue.rotation.x = 0.5;
-    mouth.add(hole, tongue);
+    mouth.add(hole);
     this.head.add(mouth);
     this.mouth = mouth;
   }
