@@ -284,6 +284,21 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(snares.map((n) => [n.step / r.score.stepsPerBeat, !!n.flam])).toEqual([[1, true], [3, false]]);
   });
 
+  it('여러 마디 쉼표는 위에 적힌 수만큼 쉰다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(200);
+    st.barline(380);
+    st.barline(560);
+    rockBar(st, 40, 200);
+    b.glyph('', 220, st.y(4), 'Bravura', 140);
+    b.text('3', 287, st.top + 2 * S);
+    rockBar(st, 380, 560);
+    const { score } = readSheet([b.page()]);
+    expect(score.bars).toBe(5);
+    expect(at(score, 'snare')).toEqual([1, 3, 17, 19]);
+  });
+
   it('악보가 없는 PDF는 알려 준다', () => {
     expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/악보를 찾지 못했어요/);
   });

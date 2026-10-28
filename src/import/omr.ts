@@ -1,3 +1,4 @@
+import { DIGIT_TEMPLATES } from './digits';
 import type { Glyph, PageImage, Segment } from './pdfPage';
 
 /**
@@ -18,6 +19,8 @@ export interface OmrResult {
 }
 
 const FONT = 'OMR';
+/** 읽은 숫자·기호는 보통 글자로 내보낸다 (sheet.ts가 빠르기·여러 마디 쉼표 수로 읽는다) */
+const TEXT_FONT = 'OMRText';
 
 interface Line {
   y0: number;
@@ -248,6 +251,58 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     }
   }
 
+  // ---------- 4. 숫자: 여러 마디 쉼표 위의 마디 수, 빠르기(♩ = 130) ----------
+  const textBlobs = new Set<Blob>();
+  const text = (char: string, x0: number, x1: number, base: number, height: number) =>
+    out.glyphs.push({ font: TEXT_FONT, char, x: PX(x0), y: PY(base), size: (height * ky) / 0.72, width: (x1 - x0 + 1) * kx });
+  const digitOf = (b: Blob) => readDigit(b, w, label, blobs.indexOf(b));
+  const cxOf = (b: Blob) => (b.x0 + b.x1) / 2;
+  const hOf = (b: Blob) => (b.y1 - b.y0 + 1) / s;
+  /** 왼쪽부터 바짝 붙어 이어지는 숫자들. 하나라도 숫자가 아니면 null */
+  const digitRun = (cands: Blob[]) => {
+    const run: Blob[] = [];
+    for (const b of cands.sort((p, q) => p.x0 - q.x0)) {
+      if (run.length && b.x0 - run[run.length - 1].x1 > 0.8 * s) break;
+      if (hOf(b) < 0.9 || hOf(b) > 2.8) return null;
+      run.push(b);
+    }
+    const digits = run.map((b) => digitOf(b));
+    return run.length && digits.every((d) => d !== null) ? { blobs: run, str: digits.join('') } : null;
+  };
+  const emit = (run: Blob[], str: string) => {
+    const base = Math.max(...run.map((b) => b.y1)) + 1;
+    const height = Math.max(...run.map((b) => b.y1 - b.y0 + 1));
+    // 숫자 사이가 벌어져 있어도 한 낱말로 읽히게 한 글자로 낸다
+    text(str, run[0].x0, run[run.length - 1].x1, base, height);
+    for (const b of run) textBlobs.add(b);
+    return { base, height };
+  };
+  for (const b of blobs) {
+    const W = (b.x1 - b.x0 + 1) / s;
+    const H = hOf(b);
+    const { st, d } = staveOf((b.y0 + b.y1) / 2);
+    // 여러 마디 쉼표(오선 가운데의 굵고 긴 막대) 위의 숫자
+    if (d === 0 && W >= 2.5 && H <= 0.8 && b.area / ((b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1)) >= 0.75) {
+      const run = digitRun(blobs.filter((o) => o.y1 < st.top && o.y1 > st.top - 4 * s && cxOf(o) > b.x0 && cxOf(o) < b.x1));
+      if (run) emit(run.blobs, run.str);
+    }
+    // 빠르기: 가로로 납작한 획 두 개가 위아래로 놓인 = 와 그 오른쪽 숫자
+    if (d > 0 && b.y1 < st.top && W >= 0.5 && W <= 1.6 && H <= 0.4) {
+      const pair = blobs.find((o) => o !== b && Math.abs(o.x0 - b.x0) < 0.3 * s && Math.abs(o.x1 - b.x1) < 0.3 * s && o.y0 > b.y1 && o.y0 - b.y1 < 0.8 * s && hOf(o) <= 0.4);
+      if (!pair) continue;
+      const top = b.y0 - 1.5 * s;
+      const bottom = pair.y1 + 1.5 * s;
+      const run = digitRun(blobs.filter((o) => o.x0 > b.x1 && o.x0 - b.x1 < 6 * s && o.y0 >= top && o.y1 <= bottom));
+      if (!run || run.blobs[0].x0 - b.x1 > 1.2 * s || run.str.length < 2) continue;
+      const { base, height } = emit(run.blobs, run.str);
+      text('=', b.x0, b.x1, base, height);
+      textBlobs.add(b);
+      textBlobs.add(pair);
+      // = 왼쪽의 작은 음표(♩)도 악보의 음이 아니다
+      for (const o of blobs) if (o.x1 < b.x0 && b.x0 - o.x1 < 2.5 * s && o.y0 >= top - 2 * s && o.y1 <= bottom) textBlobs.add(o);
+    }
+  }
+
   for (const b of blobs) {
     const bw = b.x1 - b.x0 + 1;
     const bh = b.y1 - b.y0 + 1;
@@ -265,7 +320,7 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     const id = blobs.indexOf(b);
     const ends = touchesStemEnd(b);
     let cores: { x0: number; x1: number }[] = [];
-    if (d > 6 * s || isHeader || timeSig.has(b)) kind = 'skip';
+    if (d > 6 * s || isHeader || timeSig.has(b) || textBlobs.has(b)) kind = 'skip';
     else if (W <= 0.52 && H <= 0.52 && W >= 0.2 && H >= 0.2 && density >= 0.55) {
       kind = 'dot';
     } else if (W >= 0.52 && W <= 0.9 && H >= 0.45 && H <= 0.85 && density >= 0.7 && d < 2 * s) {
@@ -347,8 +402,10 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
         glyph('', left, cy, bw);
         break;
       case 'wholeRest':
-      case 'multirest':
         glyph('', left, cy, bw);
+        break;
+      case 'multirest':
+        glyph('\ue4ee', left, cy, bw);
         break;
       case 'paren':
         glyph('\ue0f5', left, cy, bw);
@@ -402,6 +459,48 @@ function thicknessOk(b: Blob, s: number, w: number, label: Int32Array, id: numbe
   ts.sort((p, q) => p - q);
   const med = ts[ts.length >> 1] ?? 0;
   return med >= 0.25 * s && med <= 0.8 * s;
+}
+
+let digitTemplates: { d: string; ar: number; f: number[] }[] | null = null;
+
+/** 덩어리를 가로 5 × 세로 7칸으로 나눈 검은 정도를 숫자 견본과 비교한다. 충분히 닮은 것이 없으면 null */
+function readDigit(b: Blob, w: number, label: Int32Array, id: number): string | null {
+  const bw = b.x1 - b.x0 + 1;
+  const bh = b.y1 - b.y0 + 1;
+  if (bh < 8 || bw > bh * 1.2) return null;
+  digitTemplates ??= DIGIT_TEMPLATES.map((t) => ({ d: t[0], ar: Number(t.slice(1, 4)) / 100, f: [...t.slice(4)].map(Number) }));
+  const f: number[] = [];
+  for (let gy = 0; gy < 7; gy++) {
+    for (let gx = 0; gx < 5; gx++) {
+      const y0 = (gy * bh) / 7;
+      const y1 = ((gy + 1) * bh) / 7;
+      const x0 = (gx * bw) / 5;
+      const x1 = ((gx + 1) * bw) / 5;
+      let ink = 0;
+      let area = 0;
+      for (let y = Math.floor(y0); y < Math.ceil(y1); y++) {
+        const wy = Math.min(y + 1, y1) - Math.max(y, y0);
+        for (let x = Math.floor(x0); x < Math.ceil(x1); x++) {
+          const wx = Math.min(x + 1, x1) - Math.max(x, x0);
+          if (label[(b.y0 + y) * w + b.x0 + x] === id) ink += wx * wy;
+          area += wx * wy;
+        }
+      }
+      f.push((ink / area) * 9);
+    }
+  }
+  const ar = bw / bh;
+  let best = Infinity;
+  let digit: string | null = null;
+  for (const t of digitTemplates) {
+    let dist = 40 * (ar - t.ar) ** 2;
+    for (let i = 0; i < 35; i++) dist += (f[i] - t.f[i]) ** 2;
+    if (dist < best) {
+      best = dist;
+      digit = t.d;
+    }
+  }
+  return best < 260 ? digit : null;
 }
 
 /** 열마다 띠가 하나씩이고 그 가운데 높이가 한쪽으로 고르게 움직이는가 (기운 빔) */

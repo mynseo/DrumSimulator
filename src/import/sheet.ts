@@ -37,7 +37,7 @@ export const sheetDebug: { log?: (msg: string) => void } = {};
 type HeadKind = 'black' | 'x' | 'half' | 'whole' | 'circleX' | 'slash';
 type Sym =
   | { t: 'head'; kind: HeadKind }
-  | { t: 'rest'; beats: number; measure?: boolean }
+  | { t: 'rest'; beats: number; measure?: boolean; multi?: boolean }
   | { t: 'flag'; n: number }
   | { t: 'dot' }
   | { t: 'accent' }
@@ -106,6 +106,7 @@ const SMUFL: Record<string, Sym> = {
   '\ue101': { t: 'head', kind: 'slash' },
   '\ue0b7': { t: 'head', kind: 'x' },
   '\ue4e3': { t: 'rest', beats: 4, measure: true },
+  '\ue4ee': { t: 'rest', beats: 4, measure: true, multi: true }, // 여러 마디 쉼표 막대
   '\ue4e4': { t: 'rest', beats: 2 },
   '\ue4e5': { t: 'rest', beats: 1 },
   '\ue4e6': { t: 'rest', beats: 0.5 },
@@ -304,6 +305,8 @@ interface RestEv {
   y: number;
   beats: number;
   measure: boolean;
+  /** 여러 마디 쉼표 */
+  multi?: boolean;
 }
 
 export interface MeasureMarks {
@@ -329,6 +332,8 @@ export interface ReadMeasure {
   length: number;
   /** 한 마디 반복 기호(%): 바로 앞 마디를 그대로 친다 */
   repeatPrev?: boolean;
+  /** 여러 마디 쉼표: 이만큼의 빈 마디 */
+  restBars?: number;
   marks: MeasureMarks;
 }
 
@@ -580,9 +585,9 @@ function readStaff(
   const rests: RestEv[] = glyphs
     .filter((x) => x.sym.t === 'rest')
     .map(({ g, sym }) => {
-      const r = sym as { beats: number; measure?: boolean };
+      const r = sym as { beats: number; measure?: boolean; multi?: boolean };
       const nd = dotCount.get(g) ?? 0;
-      return { x: g.x, y: g.y, beats: r.beats * (nd ? 1.5 : 1), measure: !!r.measure };
+      return { x: g.x, y: g.y, beats: r.beats * (nd ? 1.5 : 1), measure: !!r.measure, multi: !!r.multi };
     });
 
   // 잇단음표 숫자: 오선 근처의 작은 3·5·6
@@ -590,7 +595,10 @@ function readStaff(
   for (const { g, sym } of glyphs) {
     if (sym.t === 'tuplet') tuplets.push({ x: g.x + g.width / 2, y: g.y, n: (sym as { n: number }).n, x0: g.x, x1: g.x + g.width, size: g.size, own: true });
   }
+  // 여러 마디 쉼표 위의 숫자는 잇단음표가 아니다
+  const multiRests = glyphs.filter(({ sym }) => sym.t === 'rest' && (sym as { multi?: boolean }).multi).map(({ g }) => g);
   for (const t of texts) {
+    if (multiRests.some((g) => (t.x + t.x1) / 2 > g.x && (t.x + t.x1) / 2 < g.x + g.width)) continue;
     // 쪽 번호·마디 번호와 헷갈리지 않게: 작은 글씨이고 오선 가로 범위 안에 있어야 한다
     if (/^[356]$/.test(t.str.trim()) && t.size < 2.1 * s && t.y < st.top + 7 * s && t.y > st.bottom - 6 * s && t.x > st.x0 + 3 * s && t.x1 < st.x1) {
       tuplets.push({ x: (t.x + t.x1) / 2, y: t.y, n: Number(t.str.trim()), x0: t.x, x1: t.x1, size: t.size, own: t.own !== false });
@@ -769,8 +777,14 @@ function readStaff(
       }
     }
     if (switches.length) cymbalMode.ride = switches[switches.length - 1].ride;
+    // 여러 마디 쉼표: 막대 위에 적힌 숫자만큼 쉰다
+    let restBars = 0;
+    if (!cs.length && rs.some((r) => r.multi)) {
+      const num = texts.find((t) => t.own !== false && /^\d{1,3}$/.test(t.str.trim()) && (t.x + t.x1) / 2 > e.x0 && (t.x + t.x1) / 2 < e.x1 && t.y > st.top && t.y < st.top + 5 * s);
+      if (num) restBars = Number(num.str.trim());
+    }
     notes.sort((a, b) => a.beat - b.beat);
-    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat }, ...(simile && !cs.length ? { repeatPrev: true } : {}) });
+    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat }, ...(simile && !cs.length ? { repeatPrev: true } : {}), ...(restBars > 1 ? { restBars } : {}) });
   });
   return out;
 }
@@ -972,7 +986,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
     const texts = textRuns(page.glyphs);
     const letters = stickLetters(page.glyphs);
     if (pi === 0) {
-      const big = texts.filter((t) => t.y > page.height * 0.75 && /\S/.test(t.str)).sort((a, b) => b.size - a.size)[0];
+      const big = texts.filter((t) => t.y > page.height * 0.75 && /\S/.test(t.str) && !/^[\d\s=]+$/.test(t.str)).sort((a, b) => b.size - a.size)[0];
       title = big?.str.trim() ?? '';
       const tempo = texts.find((t) => /=\s*\d{2,3}/.test(t.str));
       if (tempo) bpm = Number(tempo.str.match(/=\s*(\d{2,3})/)![1]);
@@ -1063,14 +1077,22 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       const sysTop = sys[0].top;
       const sysBottom = sys[sys.length - 1].bottom;
       const s0 = sys[0].s;
-      const startIdx = slots.length;
+      // 오선 위 마디 → 펼친 칸 (여러 마디 쉼표는 칸 여러 개)
+      const slotOf: number[] = [];
       main.forEach((m, k) => {
         const variants = read.map((r) => r.find((x) => Math.abs(x.x0 - m.x0) < 3 * s0 && Math.abs(x.x1 - m.x1) < 3 * s0) ?? null).filter((x): x is ReadMeasure => !!x);
         // 한 마디 반복(%)은 바로 앞에 적힌 마디의 음을 그대로 쓴다
         const prev = slots[slots.length - 1];
         for (const v of variants) if (v.repeatPrev && prev) v.notes = prev.variants[0].notes.map((n) => ({ ...n }));
+        slotOf[k] = slots.length;
         slots.push({ variants, labels: labels.slice(0, variants.length), marks: { ...m.marks } });
-        void k;
+        if (m.restBars) {
+          const first = slots[slots.length - 1];
+          for (let i = 1; i < Math.min(m.restBars, 500); i++) slots.push({ variants: variants.map((v) => ({ ...v, notes: [] })), labels: first.labels, marks: emptyMarks() });
+          // 끝 도돌이표는 마지막 쉼 마디에
+          slots[slots.length - 1].marks.endRepeat = first.marks.endRepeat;
+          if (m.restBars > 1) first.marks.endRepeat = false;
+        }
       });
 
       // 이 시스템에 속한 표시: 시스템 위 14칸 ~ 아래 8칸
@@ -1078,7 +1100,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       const measureAt = (x: number) => {
         let i = main.findIndex((m) => x >= m.x0 - s0 && x < m.x1);
         if (i < 0) i = x < main[0].x0 ? 0 : main.length - 1;
-        return slots[startIdx + i];
+        return slots[slotOf[i]];
       };
       for (const t of texts) {
         if (!mine(t.y)) continue;
@@ -1100,7 +1122,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
             const lx1 = Math.max(line.x1, line.x2);
             main.forEach((m, i) => {
               const overlap = Math.min(m.x1, lx1) - Math.max(m.x0, lx0);
-              if (overlap > (m.x1 - m.x0) * 0.5) slots[startIdx + i].marks.volta = nums;
+              if (overlap > (m.x1 - m.x0) * 0.5) slots[slotOf[i]].marks.volta = nums;
             });
           }
         }
@@ -1167,7 +1189,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   }
   if (!notes.length) throw new Error('드럼 음표를 찾지 못했어요');
   const uniq = new Set(order.map((o) => o.slot)).size;
-  if (scanned) warnings.push('그림 악보를 읽었어요: 틀린 곳이 있을 수 있고 빠르기는 직접 맞춰 주세요');
+  if (scanned) warnings.push(bpm ? '그림 악보를 읽었어요: 틀린 곳이 있을 수 있어요' : '그림 악보를 읽었어요: 틀린 곳이 있을 수 있고 빠르기는 직접 맞춰 주세요');
   if (approximated) warnings.push(scanned ? `${approximated}마디는 박자가 안 맞아 음 위치로 어림했어요` : `${approximated}마디는 쉼표가 생략돼 음 위치로 박을 맞췄어요`);
 
   return {
