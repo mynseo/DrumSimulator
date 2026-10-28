@@ -16,6 +16,7 @@ export interface InstrumentInfo {
 /** 에디터에 위에서부터 보이는 순서 */
 export const INSTRUMENTS: InstrumentInfo[] = [
   { id: 'crash', label: '크래시', piece: 'crash', kind: 'hand', lateral: -0.45, cymbal: true },
+  { id: 'crash2', label: '크래시 2', piece: 'crash2', kind: 'hand', lateral: 0.42, cymbal: true },
   { id: 'ride', label: '라이드', piece: 'ride', kind: 'hand', lateral: 0.62, cymbal: true, timekeeper: true },
   { id: 'hihatOpen', label: '하이햇 열림', piece: 'hihat', kind: 'hand', lateral: -0.48, cymbal: true, timekeeper: true },
   { id: 'hihatClosed', label: '하이햇 닫힘', piece: 'hihat', kind: 'hand', lateral: -0.48, cymbal: true, timekeeper: true },
@@ -35,6 +36,6 @@ export const INSTRUMENT_ORDER: Record<Instrument, number> = Object.fromEntries(
   INSTRUMENTS.map((i, idx) => [i.id, idx]),
 ) as Record<Instrument, number>;
 
-export const PIECES: PieceId[] = ['crash', 'ride', 'hihat', 'tom1', 'tom2', 'floorTom', 'snare', 'kick'];
+export const PIECES: PieceId[] = ['crash', 'crash2', 'ride', 'hihat', 'tom1', 'tom2', 'floorTom', 'snare', 'kick'];
 
 export const VELOCITY = { ghost: 0.35, normal: 0.75, accent: 1 } as const;

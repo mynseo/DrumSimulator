@@ -108,12 +108,18 @@ export class Editor {
     return this.score.notes.find((n) => n.step === step && n.instrument === instrument);
   }
 
+  /** 누를 때마다: 보통 → 세게 → 플램(손으로 치는 악기만) → 약하게 → 지우기 */
   private cycleVelocity(step: number, instrument: Instrument) {
     const n = this.find(step, instrument);
+    const hand = INSTRUMENTS.find((i) => i.id === instrument)?.kind === 'hand';
     if (!n) {
       this.score.notes.push({ step, instrument, velocity: VELOCITY.normal });
-    } else if (n.velocity >= VELOCITY.accent) {
+    } else if (n.flam) {
+      delete n.flam;
       n.velocity = VELOCITY.ghost;
+    } else if (n.velocity >= VELOCITY.accent) {
+      if (hand) n.flam = true;
+      else n.velocity = VELOCITY.ghost;
     } else if (n.velocity <= VELOCITY.ghost) {
       this.score.notes.splice(this.score.notes.indexOf(n), 1);
     } else {
@@ -144,13 +150,14 @@ export class Editor {
   }
 
   private refreshCells() {
-    for (const el of this.cells.values()) el.classList.remove('on', 'accent', 'ghost');
+    for (const el of this.cells.values()) el.classList.remove('on', 'accent', 'ghost', 'flam');
     for (const n of this.score.notes) {
       const el = this.cells.get(`${n.step}:${n.instrument}`);
       if (!el) continue;
       el.classList.add('on');
       if (n.velocity >= VELOCITY.accent) el.classList.add('accent');
       else if (n.velocity <= VELOCITY.ghost) el.classList.add('ghost');
+      if (n.flam) el.classList.add('flam');
     }
   }
 }

@@ -1,3 +1,4 @@
+import { INSTRUMENT_INFO } from '../core/instruments';
 import type { Instrument } from '../core/types';
 import { AcousticKit, CustomKit } from './kits/sampled';
 import { BASIC_KIT, KIT_808, KIT_CHIP, KIT_ELECTRO } from './kits/synth';
@@ -27,9 +28,12 @@ export class AudioEngine {
   private openHat: GainNode | null = null;
 
   constructor(readonly ctx: BaseAudioContext) {
+    // 큰 소리만 살짝 눌러 찌그러짐을 막는다. 너무 세게 누르면 악센트가 보통 음과 비슷해진다
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -10;
-    comp.ratio.value = 4;
+    comp.threshold.value = -6;
+    comp.knee.value = 6;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.003;
     this.master = ctx.createGain();
     this.master.gain.value = 0.8;
     this.master.connect(comp).connect(ctx.destination);
@@ -50,9 +54,34 @@ export class AudioEngine {
       this.openHat = null;
     }
     const out = this.ctx.createGain();
-    out.connect(this.master);
+    const tone = this.tone(instrument, velocity);
+    if (tone) out.connect(tone).connect(this.master);
+    else out.connect(this.master);
     kit.play(new Voice(this.ctx, out, this.noise), instrument, when, velocity);
     if (instrument === 'hihatOpen') this.openHat = out;
+  }
+
+  /**
+   * 세기에 따른 음색: 실제 드럼은 살살 치면 둔하고 세게 치면 밝다.
+   * 고스트는 높은 소리를 깎고(로우패스), 악센트는 높은 소리를 올린다(하이셸프). 보통 세기는 그대로.
+   */
+  private tone(instrument: Instrument, velocity: number): BiquadFilterNode | null {
+    const metal = !!INSTRUMENT_INFO[instrument].cymbal;
+    if (velocity < 0.6) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = Math.min(18000, (metal ? 4500 : 1800) * 2 ** (((velocity - 0.3) / 0.3) * 3));
+      f.Q.value = 0.6;
+      return f;
+    }
+    if (velocity > 0.85) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'highshelf';
+      f.frequency.value = metal ? 6000 : 2500;
+      f.gain.value = ((velocity - 0.85) / 0.15) * 6;
+      return f;
+    }
+    return null;
   }
 
   /** 메트로놈: 킷과 상관없이 같은 소리 */

@@ -85,8 +85,11 @@ export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb 
       let rightIdx: number;
       // 서로 멀리 떨어진 두 악기(왼쪽 크래시 + 오른쪽 플로어 탐)는 팔이 엇갈리지 않게 좌우대로 친다
       const farApart = Math.abs(ia.lateral - ib.lateral) > CROSS_LIMIT;
-      if (ia.timekeeper && !ib.timekeeper) rightIdx = a;
-      else if (ib.timekeeper && !ia.timekeeper) rightIdx = b;
+      // 박자 유지 악기(하이햇)는 오른손. 단 다른 악기가 멀리 오른쪽(오른쪽 크래시·플로어 탐)이면
+      // 왼손이 오른손 밑으로 건너가야 하니 오른손이 그쪽을 치고 왼손이 하이햇을 맡는다
+      const crossing = (keeper: typeof ia, other: typeof ia) => farApart && other.lateral > keeper.lateral;
+      if (ia.timekeeper && !ib.timekeeper) rightIdx = crossing(ia, ib) ? b : a;
+      else if (ib.timekeeper && !ia.timekeeper) rightIdx = crossing(ib, ia) ? a : b;
       else if (!farApart && ia.cymbal && !ib.cymbal) rightIdx = a;
       else if (!farApart && ib.cymbal && !ia.cymbal) rightIdx = b;
       else rightIdx = ia.lateral >= ib.lateral ? a : b;

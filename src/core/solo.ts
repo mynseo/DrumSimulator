@@ -34,6 +34,8 @@ const CELLS = {
   // 강조
   stab: { crash: 'X---', snare: 'X---', kick: 'x---' },
   stabFloor: { crash: 'X---', floorTom: 'X---', kick: 'x---' },
+  stabRight: { crash2: 'X---', snare: 'X---', kick: 'x---' },
+  crashBoth: { crash: 'X---', crash2: '--X-', kick: 'x-x-' },
   rest: {},
 } satisfies Record<string, Cell>;
 
@@ -45,8 +47,8 @@ const FEATURED: CellName[][] = [
   ['grooveA', 'grooveB', 'grooveA', 'snareRoll'],
   ['snareAccent', 'snareGhost', 'snareAccent', 'snareRoll'],
   ['tom1Roll', 'tom2Roll', 'floorRoll', 'floorKick'],
-  ['stab', 'rest', 'stabFloor', 'snareTom'],
-  ['tomKick', 'tomKick', 'linear', 'linear'],
+  ['stab', 'rest', 'stabRight', 'snareTom'],
+  ['crashBoth', 'tomKick', 'linear', 'linear'],
   ['crescA', 'crescB', 'crescC', 'tom2Floor'],
   ['tomsDown', 'tom2Floor', 'floorKick', 'snareRoll'],
 ];
@@ -54,7 +56,7 @@ const FEATURED: CellName[][] = [
 /** 마디 성격별로 고를 수 있는 조각 */
 const POOL: Record<'groove' | 'middle' | 'fill', CellName[]> = {
   groove: ['grooveA', 'grooveB', 'linear', 'rideKick'],
-  middle: ['snareAccent', 'snareGhost', 'snareRoll', 'tom1Roll', 'tom2Roll', 'floorRoll', 'snareTom', 'tomsDown', 'tom2Floor', 'floorKick', 'tomKick', 'linear', 'stab', 'stabFloor', 'rideKick'],
+  middle: ['snareAccent', 'snareGhost', 'snareRoll', 'tom1Roll', 'tom2Roll', 'floorRoll', 'snareTom', 'tomsDown', 'tom2Floor', 'floorKick', 'tomKick', 'linear', 'stab', 'stabFloor', 'stabRight', 'crashBoth', 'rideKick'],
   fill: ['snareRoll', 'tomsDown', 'tom2Floor', 'floorRoll', 'tom1Roll', 'floorKick'],
 };
 

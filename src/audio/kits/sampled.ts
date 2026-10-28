@@ -68,14 +68,16 @@ const ACOUSTIC: Record<Instrument, SampledVoice> = {
   hihatOpen: { layers: [{ file: 'hihat-open', upTo: 1 }], gain: 0.42 },
   hihatPedal: { layers: [{ file: 'hihat-pedal', upTo: 1 }], gain: 0.35 },
   crash: { layers: [{ file: 'crash', upTo: 1 }], gain: 0.75 },
+  // 같은 녹음을 조금 높게: 작고 밝은 크래시
+  crash2: { layers: [{ file: 'crash', upTo: 1 }], gain: 0.7, rate: 1.14 },
   ride: { layers: [{ file: 'ride', upTo: 1 }], gain: 0.45 },
 };
 const RIDE_BELL = 'ride-bell';
 
 const ACOUSTIC_FILES = [...new Set([...Object.values(ACOUSTIC).flatMap((v) => v.layers.map((l) => l.file)), RIDE_BELL])];
 
-/** 세기 → 샘플 볼륨. 합성 킷보다 실제 녹음은 셈여림 폭을 조금 더 넓게 둔다 */
-const sampleLevel = (velocity: number) => 1.3 * (0.12 + 0.88 * velocity ** 1.3);
+/** 세기 → 샘플 볼륨. 녹음은 합성 소리보다 작게 들려서 조금 키운다 (곡선은 합성 킷과 같다) */
+const sampleLevel = (velocity: number) => 1.45 * level(velocity);
 
 /**
  * 실제로 녹음한 드럼 소리.

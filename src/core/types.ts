@@ -1,6 +1,7 @@
 /** 악보에서 쓰는 개별 소리(같은 하이햇이라도 닫힘/열림/페달은 다른 소리). */
 export type Instrument =
   | 'crash'
+  | 'crash2'
   | 'ride'
   | 'hihatOpen'
   | 'hihatClosed'
@@ -12,7 +13,7 @@ export type Instrument =
   | 'hihatPedal';
 
 /** 3D 드럼 세트의 물리적인 부품. 여러 Instrument가 같은 부품을 칠 수 있다. */
-export type PieceId = 'crash' | 'ride' | 'hihat' | 'tom1' | 'tom2' | 'floorTom' | 'snare' | 'kick';
+export type PieceId = 'crash' | 'crash2' | 'ride' | 'hihat' | 'tom1' | 'tom2' | 'floorTom' | 'snare' | 'kick';
 
 export type Hand = 'R' | 'L';
 /** RH/LH = 오른손/왼손, RF/LF = 오른발/왼발 */
@@ -27,6 +28,8 @@ export interface ScoreNote {
   velocity: number;
   /** 사용자가 지정한 손. 없으면 자동 배정 */
   hand?: Hand;
+  /** 플램: 다른 손이 아주 살짝 먼저 약하게 친다 (손으로 치는 악기만) */
+  flam?: boolean;
 }
 
 export interface Score {
@@ -50,6 +53,8 @@ export interface Hit {
   limb: Limb | null;
   velocity: number;
   handForced: boolean;
+  /** 플램의 꾸밈음: 본 음보다 조금 먼저 다른 손이 약하게 친 것 */
+  grace?: boolean;
 }
 
 export interface Timeline {

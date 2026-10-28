@@ -170,14 +170,14 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .pads {
   height: 100%; max-width: 920px; margin: 0 auto;
   display: grid; gap: 8px;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   grid-template-rows: repeat(3, 1fr);
   grid-template-areas:
-    'crash tom1 tom2 ride'
-    'hihatOpen snare snare floorTom'
-    'hihatClosed hihatPedal kick kick';
+    'crash tom1 tom2 crash2 ride'
+    'hihatOpen snare snare floorTom floorTom'
+    'hihatClosed hihatPedal kick kick kick';
 }
-.pad-crash { grid-area: crash; } .pad-tom1 { grid-area: tom1; } .pad-tom2 { grid-area: tom2; } .pad-ride { grid-area: ride; }
+.pad-crash { grid-area: crash; } .pad-crash2 { grid-area: crash2; } .pad-tom1 { grid-area: tom1; } .pad-tom2 { grid-area: tom2; } .pad-ride { grid-area: ride; }
 .pad-hihatOpen { grid-area: hihatOpen; } .pad-snare { grid-area: snare; } .pad-floorTom { grid-area: floorTom; }
 .pad-hihatClosed { grid-area: hihatClosed; } .pad-hihatPedal { grid-area: hihatPedal; } .pad-kick { grid-area: kick; }
 .pad {
@@ -257,6 +257,8 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .grid .cell.on[data-limb='LH']::after { content: 'L'; }
 .grid .cell.on.ghost::after { color: var(--text) !important; }
 .grid .cell.forced::after { text-decoration: underline; }
+/* 플램: 왼쪽 위의 작은 점 = 꾸밈음 */
+.grid .cell.on.flam { background-image: radial-gradient(circle at 18% 22%, #fff 0 2.6px, transparent 3.2px); }
 .grid .cell.unplayable::before { background: #ff3b5c !important; }
 
 dialog {

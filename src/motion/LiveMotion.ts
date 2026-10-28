@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { INSTRUMENT_INFO } from '../core/instruments';
 import type { Instrument, Limb, PieceId } from '../core/types';
 import { DrumKit, type HitFlash } from '../scene/DrumKit';
-import { createPose, type DrummerPose } from './pose';
+import { createPose, strokeHeight, type DrummerPose } from './pose';
 
 /** 입력 순간부터 스틱이 헤드에 닿기까지(초). 소리는 즉시 나므로 짧을수록 자연스럽다 */
 const STRIKE = 0.05;
@@ -75,7 +75,7 @@ export class LiveMotion {
       if (age < STRIKE) {
         const u = age / STRIKE;
         out.strike.copy(s.fromStrike).lerp(p, easeOut(u));
-        out.lift = Math.max(s.fromLift, 0.05 + 0.05 * s.velocity) * (1 - u * u);
+        out.lift = Math.max(s.fromLift, 0.085 * strokeHeight(s.velocity)) * (1 - u * u);
       } else if (age < STRIKE + HOLD) {
         out.strike.copy(p);
         out.lift = HOVER * easeOut(Math.min(1, (age - STRIKE) / 0.12));

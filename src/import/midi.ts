@@ -9,7 +9,7 @@ export const GM_DRUM_MAP: Record<number, Instrument> = {
   42: 'hihatClosed', 44: 'hihatPedal', 46: 'hihatOpen',
   45: 'tom2', 47: 'tom2',
   48: 'tom1', 50: 'tom1',
-  49: 'crash', 52: 'crash', 55: 'crash', 57: 'crash',
+  49: 'crash', 52: 'crash2', 55: 'crash', 57: 'crash2',
   51: 'ride', 53: 'ride', 59: 'ride',
 };
 
@@ -93,24 +93,42 @@ export function parseMidi(buffer: ArrayBuffer, title = 'MIDI 가져오기'): Mid
   const hasDrumChannel = raw.some((n) => n.channel === DRUM_CHANNEL);
   const source = hasDrumChannel ? raw.filter((n) => n.channel === DRUM_CHANNEL) : raw;
 
-  // 16분음표·셋잇단·32분음표 중 음들이 가장 잘 맞는 격자
-  const mapped = source.filter((n) => GM_DRUM_MAP[n.key]);
-  const stepsPerBeat = chooseSubdivision(mapped.map((n) => ({ beat: n.tick / division, weight: n.velocity / 127 })));
-  const ticksPerStep = division / stepsPerBeat;
   const seen = new Set<string>();
   const notes: ScoreNote[] = [];
   let skipped = 0;
+  // 플램: 같은 북을 32분 셋잇단보다 짧은 간격으로 두 번(앞이 약하게) 치면 앞 음은 꾸밈음
+  const flamGap = division / 12;
+  const graceOf = new Set<RawNote>();
+  const flams = new Set<RawNote>();
+  const byInstrument = new Map<Instrument, RawNote[]>();
+  for (const n of [...source].sort((a, b) => a.tick - b.tick)) {
+    const inst = GM_DRUM_MAP[n.key];
+    if (!inst) continue;
+    const list = byInstrument.get(inst) ?? [];
+    const prev = list[list.length - 1];
+    if (prev && !graceOf.has(prev) && n.tick - prev.tick > 0 && n.tick - prev.tick < flamGap && prev.velocity < n.velocity && inst !== 'kick' && inst !== 'hihatPedal') {
+      graceOf.add(prev);
+      flams.add(n);
+    }
+    list.push(n);
+    byInstrument.set(inst, list);
+  }
+  // 16분음표·셋잇단·32분음표 중 음들이 가장 잘 맞는 격자
+  const mapped = source.filter((n) => GM_DRUM_MAP[n.key] && !graceOf.has(n));
+  const stepsPerBeat = chooseSubdivision(mapped.map((n) => ({ beat: n.tick / division, weight: n.velocity / 127 })));
+  const ticksPerStep = division / stepsPerBeat;
   for (const n of source) {
     const instrument = GM_DRUM_MAP[n.key];
     if (!instrument) {
       skipped++;
       continue;
     }
+    if (graceOf.has(n)) continue;
     const step = Math.round(n.tick / ticksPerStep);
     const key = `${step}:${instrument}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    notes.push({ step, instrument, velocity: Math.min(1, n.velocity / 127) });
+    notes.push({ step, instrument, velocity: Math.min(1, n.velocity / 127), ...(flams.has(n) ? { flam: true } : {}) });
   }
 
   const stepsInBar = beatsPerBar * stepsPerBeat;

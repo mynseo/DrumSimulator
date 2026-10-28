@@ -1,6 +1,9 @@
-import { INSTRUMENT_INFO, INSTRUMENT_ORDER, PIECES } from './instruments';
+import { INSTRUMENT_INFO, INSTRUMENT_ORDER, PIECES, VELOCITY } from './instruments';
 import { assignSticking } from './sticking';
 import { LIMBS, type Hit, type Limb, type PieceId, type Score, type Timeline } from './types';
+
+/** 플램의 꾸밈음이 본 음보다 먼저 나오는 시간(초). 실제 연주에서 20~40ms 정도 */
+export const FLAM_GAP = 0.03;
 
 export function stepsPerBar(score: Score): number {
   return score.beatsPerBar * score.stepsPerBeat;
@@ -14,6 +17,7 @@ export function buildTimeline(score: Score): Timeline {
     .sort((a, b) => a.step - b.step || INSTRUMENT_ORDER[a.instrument] - INSTRUMENT_ORDER[b.instrument]);
 
   const limbs = assignSticking(notes, stepDuration);
+  const duration = totalSteps * stepDuration;
   const hits: Hit[] = notes.map((n, i) => ({
     time: n.step * stepDuration,
     step: n.step,
@@ -24,6 +28,26 @@ export function buildTimeline(score: Score): Timeline {
     handForced: !!n.hand,
   }));
 
+  // 플램: 본 음을 치는 손의 반대 손이 조금 먼저 약하게 친다. 그 손이 같은 순간 다른 것을 치고 있으면 못 친다
+  const gap = Math.min(FLAM_GAP, stepDuration * 0.45);
+  notes.forEach((n, i) => {
+    const limb = limbs[i];
+    if (!n.flam || (limb !== 'RH' && limb !== 'LH')) return;
+    const other: Limb = limb === 'RH' ? 'LH' : 'RH';
+    if (hits.some((h) => h.step === n.step && h.limb === other)) return;
+    hits.push({
+      time: (hits[i].time - gap + duration) % duration,
+      step: n.step,
+      instrument: n.instrument,
+      piece: hits[i].piece,
+      limb: other,
+      velocity: Math.min(VELOCITY.ghost + 0.05, n.velocity * 0.5),
+      handForced: false,
+      grace: true,
+    });
+  });
+  hits.sort((a, b) => a.time - b.time);
+
   const byLimb = Object.fromEntries(LIMBS.map((l) => [l, [] as Hit[]])) as Record<Limb, Hit[]>;
   const byPiece = Object.fromEntries(PIECES.map((p) => [p, [] as Hit[]])) as Record<PieceId, Hit[]>;
   for (const h of hits) {
@@ -31,7 +55,7 @@ export function buildTimeline(score: Score): Timeline {
     byPiece[h.piece].push(h);
   }
   return {
-    duration: totalSteps * stepDuration,
+    duration,
     stepDuration,
     totalSteps,
     stepsPerBeat: score.stepsPerBeat,

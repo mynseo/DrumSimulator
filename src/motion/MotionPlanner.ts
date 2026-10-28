@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { nextHit, previousHit } from '../core/timeline';
 import type { Hit, PieceId, Timeline } from '../core/types';
 import { DrumKit } from '../scene/DrumKit';
-import { createPose, type DrummerPose, type StickPose } from './pose';
+import { createPose, strokeHeight, type DrummerPose, type StickPose } from './pose';
 
 /** 박자를 쉬는 동안 스틱 끝이 떠 있는 높이 */
 const HOVER = 0.06;
@@ -88,7 +88,7 @@ export class MotionPlanner {
     const span = next.time - strokeStart;
     const u = span > 0 ? (t - strokeStart) / span : 1;
     const startLift = strokeStart > prevTime ? HOVER : 0;
-    const peak = Math.max(startLift, clamp(span * 0.55, 0.035, 0.24) * (0.45 + 0.75 * next.hit.velocity));
+    const peak = Math.max(startLift, clamp(span * 0.55, 0.035, 0.24) * strokeHeight(next.hit.velocity));
 
     out.strike.copy(from).lerp(to, smoothstep(0, TRAVEL_END, u));
     // 올라갈 때는 감속, 내려칠 때는 가속(손목 스냅)
@@ -110,7 +110,7 @@ export class MotionPlanner {
       const windup = Math.min(KICK_WINDUP, prev ? (next.time - prev.time) * 0.6 : KICK_WINDUP);
       if (until < windup) {
         const u = 1 - until / windup; // 0 → 1
-        const amount = 0.35 * next.hit.velocity + 0.15;
+        const amount = 0.5 * next.hit.velocity ** 1.5 + 0.08; // 세게 찰수록 비터를 크게 젖힌다
         // 먼저 뒤로 젖혔다가(-) 헤드를 친다(1)
         const v = u < 0.55 ? -amount * easeOut(u / 0.55) : lerp(-amount, 1, easeIn((u - 0.55) / 0.45));
         p = prev && t - prev.time < KICK_RELEASE ? Math.min(p, v) : v;

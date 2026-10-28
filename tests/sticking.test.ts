@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PRESETS } from '../src/core/presets';
-import { buildTimeline } from '../src/core/timeline';
+import { buildTimeline, FLAM_GAP } from '../src/core/timeline';
 import type { Score, ScoreNote } from '../src/core/types';
 
 const score = (notes: ScoreNote[], bpm = 100, bars = 1): Score => ({
@@ -74,5 +74,29 @@ describe('손발 배정', () => {
       const tl = buildTimeline(p.score);
       expect(tl.hits.filter((h) => h.limb === null), p.name).toHaveLength(0);
     }
+  });
+
+  it('오른쪽 크래시: 혼자서도, 스네어·하이햇과 함께여도 오른손이 친다 (팔이 엇갈리지 않게)', () => {
+    const limb = (notes: ScoreNote[], inst: string) => {
+      const tl = buildTimeline(score(notes));
+      return tl.hits.filter((h) => h.instrument === inst).map((h) => h.limb);
+    };
+    expect(limb([n(0, 'crash2'), n(0, 'kick')], 'crash2')).toEqual(['RH']);
+    expect(limb([n(0, 'crash2'), n(0, 'snare')], 'crash2')).toEqual(['RH']);
+    expect(limb([n(0, 'crash2'), n(0, 'hihatClosed')], 'hihatClosed')).toEqual(['LH']);
+  });
+
+  it('플램: 반대 손이 조금 먼저 약하게 치고, 그 손이 바쁘면 꾸밈음은 생략한다', () => {
+    const tl = buildTimeline(score([{ ...n(4, 'snare'), velocity: 1, flam: true }, n(8, 'hihatClosed'), { ...n(8, 'snare'), flam: true }]));
+    const at4 = tl.hits.filter((h) => h.step === 4);
+    const main = at4.find((h) => !h.grace)!;
+    const grace = at4.find((h) => h.grace)!;
+    expect(grace.limb).not.toBe(main.limb);
+    expect(main.time - grace.time).toBeCloseTo(FLAM_GAP, 6);
+    expect(grace.velocity).toBeLessThan(0.5);
+    // 하이햇(오른손)과 같이 친 스네어 플램: 오른손이 바빠서 꾸밈음이 없다
+    expect(tl.hits.filter((h) => h.step === 8 && h.grace)).toHaveLength(0);
+    // 타임라인은 시간 순서다
+    expect(tl.hits.every((h, i) => i === 0 || tl.hits[i - 1].time <= h.time)).toBe(true);
   });
 });

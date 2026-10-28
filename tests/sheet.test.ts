@@ -216,6 +216,20 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(at(r.score, 'snare')).toEqual([3, 5, 7]);
   });
 
+  it('작은 꾸밈음이 앞에 붙은 음은 플램으로 읽는다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(560);
+    rockBar(st, 40, 560);
+    // 2박 스네어 앞의 작은 꾸밈음(같은 높이, 크기 60%)
+    const x = 40 + 8 + (1 * (520 - 16)) / 4;
+    b.glyph('\u0153', x - 9, st.y(5), 'MaestroPercussion', HEAD * 0.6, 12);
+    b.line(x - 9 + HEAD * 0.6, st.y(5), x - 9 + HEAD * 0.6, st.y(5) + 2.5 * S);
+    const r = readSheet([b.page()]);
+    const snares = r.score.notes.filter((n) => n.instrument === 'snare');
+    expect(snares.map((n) => [n.step / r.score.stepsPerBeat, !!n.flam])).toEqual([[1, true], [3, false]]);
+  });
+
   it('글자가 없는 PDF(스캔한 악보)는 알려 준다', () => {
     expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/스캔/);
   });

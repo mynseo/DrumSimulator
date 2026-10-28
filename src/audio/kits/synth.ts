@@ -7,14 +7,21 @@ function synthKit(id: string, name: string, description: string, play: SoundKit[
   return { id, name, description, ready: () => true, play };
 }
 
-/** 세기 → 볼륨. 너무 작게 친 음도 들리도록 바닥을 둔다 */
-export const level = (velocity: number) => 0.15 + 0.85 * velocity;
+/** 오른쪽 크래시(크래시 2)는 왼쪽보다 작은 심벌: 조금 높고 짧게 */
+const CRASH2_PITCH = 1.18;
+
+/**
+ * 세기 → 볼륨. 사람 귀는 소리 크기를 로그로 느끼므로 곡선을 가파르게 둔다:
+ * 고스트(0.35) ≈ 0.19, 보통(0.75) ≈ 0.62, 악센트(1) = 1 → 고스트와 보통은 약 10dB, 보통과 악센트는 약 4dB 차이
+ */
+export const level = (velocity: number) => 0.05 + 0.95 * velocity ** 1.8;
 
 // ---------------------------------------------------------------------------
 // 기본: 처음부터 쓰던 합성 드럼
 // ---------------------------------------------------------------------------
 export function playBasic(v: Voice, instrument: Instrument, when: number, velocity: number) {
   const g = level(velocity);
+  const k = instrument === 'crash2' ? CRASH2_PITCH : 1;
   switch (instrument) {
     case 'kick':
       v.osc('sine', when, 0.5, 150, 45, 0.12).connect(v.env(when, g * 1.1, 0.42));
@@ -43,8 +50,9 @@ export function playBasic(v: Voice, instrument: Instrument, when: number, veloci
       return;
     }
     case 'crash':
-      v.noise(when, 2).connect(v.filter('highpass', 4000)).connect(v.env(when, g * 0.5, 1.8));
-      v.metallic(when, 2, 60).connect(v.filter('highpass', 5000)).connect(v.env(when, g * 0.35, 1.2));
+    case 'crash2':
+      v.noise(when, 2 / k).connect(v.filter('highpass', 4000 * k)).connect(v.env(when, g * 0.5, 1.8 / k));
+      v.metallic(when, 2, 60 * k).connect(v.filter('highpass', 5000 * k)).connect(v.env(when, g * 0.35, 1.2 / k));
       return;
     case 'ride':
       v.metallic(when, 1.3, 70).connect(v.filter('bandpass', 5500, 1.2)).connect(v.env(when, g * 0.45, 1.1));
@@ -59,6 +67,7 @@ export function playBasic(v: Voice, instrument: Instrument, when: number, veloci
 // ---------------------------------------------------------------------------
 function play808(v: Voice, instrument: Instrument, when: number, velocity: number) {
   const g = level(velocity);
+  const k = instrument === 'crash2' ? CRASH2_PITCH : 1;
   switch (instrument) {
     case 'kick': {
       const drive = v.drive(1.6);
@@ -90,8 +99,9 @@ function play808(v: Voice, instrument: Instrument, when: number, velocity: numbe
       return;
     }
     case 'crash':
-      v.metallic(when, 2.2, 52).connect(v.filter('highpass', 6000)).connect(v.env(when, g * 0.5, 1.9, 0.001));
-      v.noise(when, 1.4).connect(v.filter('highpass', 7000)).connect(v.env(when, g * 0.2, 1.2));
+    case 'crash2':
+      v.metallic(when, 2.2, 52 * k).connect(v.filter('highpass', 6000 * k)).connect(v.env(when, g * 0.5, 1.9 / k, 0.001));
+      v.noise(when, 1.4).connect(v.filter('highpass', 7000 * k)).connect(v.env(when, g * 0.2, 1.2 / k));
       return;
     case 'ride':
       v.metallic(when, 1.2, 62).connect(v.filter('bandpass', 7500, 1.4)).connect(v.env(when, g * 0.5, 1.0, 0.001));
@@ -104,6 +114,7 @@ function play808(v: Voice, instrument: Instrument, when: number, velocity: numbe
 // ---------------------------------------------------------------------------
 function playElectro(v: Voice, instrument: Instrument, when: number, velocity: number) {
   const g = level(velocity);
+  const k = instrument === 'crash2' ? CRASH2_PITCH : 1;
   switch (instrument) {
     case 'kick': {
       const drive = v.drive(3);
@@ -134,8 +145,9 @@ function playElectro(v: Voice, instrument: Instrument, when: number, velocity: n
       return;
     }
     case 'crash':
-      v.noise(when, 1.6).connect(v.filter('highpass', 5000)).connect(v.env(when, g * 0.55, 1.3, 0.001));
-      v.metallic(when, 1.4, 75).connect(v.filter('highpass', 6000)).connect(v.env(when, g * 0.25, 0.9));
+    case 'crash2':
+      v.noise(when, 1.6).connect(v.filter('highpass', 5000 * k)).connect(v.env(when, g * 0.55, 1.3 / k, 0.001));
+      v.metallic(when, 1.4, 75 * k).connect(v.filter('highpass', 6000 * k)).connect(v.env(when, g * 0.25, 0.9 / k));
       return;
     case 'ride':
       v.metallic(when, 0.9, 90).connect(v.filter('bandpass', 8000, 2)).connect(v.env(when, g * 0.45, 0.75, 0.001));
@@ -166,6 +178,7 @@ function chipNoise(ctx: BaseAudioContext): AudioBuffer {
 
 function playChip(v: Voice, instrument: Instrument, when: number, velocity: number) {
   const g = level(velocity) * 0.6;
+  const k = instrument === 'crash2' ? CRASH2_PITCH : 1;
   const noise = chipNoise(v.ctx);
   switch (instrument) {
     case 'kick':
@@ -191,7 +204,8 @@ function playChip(v: Voice, instrument: Instrument, when: number, velocity: numb
       return;
     }
     case 'crash':
-      v.noise(when, 1.1, noise, 0.9).connect(v.filter('highpass', 3000)).connect(v.env(when, g * 0.6, 0.9, 0.001));
+    case 'crash2':
+      v.noise(when, 1.1, noise, 0.9 * k).connect(v.filter('highpass', 3000 * k)).connect(v.env(when, g * 0.6, 0.9 / k, 0.001));
       return;
     case 'ride':
       v.osc('square', when, 0.12, 1568).connect(v.env(when, g * 0.25, 0.1, 0.001));

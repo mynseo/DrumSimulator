@@ -38,3 +38,9 @@ export function createPose(): DrummerPose {
   const foot = (): FootPose => ({ heel: new THREE.Vector3(), angle: 0 });
   return { RH: stick(), LH: stick(), RF: foot(), LF: foot(), lookAt: new THREE.Vector3(), beat: -1, time: 0 };
 }
+
+/**
+ * 세기 → 스틱을 들어 올리는 높이 배율. 실제 연주처럼 고스트는 헤드 바로 위에서 톡,
+ * 악센트는 높이 들었다가 내려친다: 고스트 ≈ 0.4, 보통 ≈ 0.85, 악센트 = 1.25
+ */
+export const strokeHeight = (velocity: number) => 0.2 + 1.05 * velocity ** 1.5;

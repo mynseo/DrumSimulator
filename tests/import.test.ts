@@ -24,6 +24,12 @@ B |o---------------|
     expect(s.notes.map((n) => n.step)).toEqual([0, 2, 4, 6, 8, 10, 12, 14]);
   });
 
+  it('f는 플램', () => {
+    const s = parseDrumTab('S |----f-------x---|\nB |x---------------|');
+    const snare = s.notes.filter((n) => n.instrument === 'snare');
+    expect(snare.map((n) => [n.step, !!n.flam])).toEqual([[4, true], [12, false]]);
+  });
+
   it('12칸 마디는 셋잇단으로 읽는다', () => {
     const s = parseDrumTab('R |x--x-xx--x-x|');
     expect(s.stepsPerBeat).toBe(3);
@@ -105,5 +111,11 @@ describe('MIDI', () => {
     const { score } = parseMidi(midi(events));
     expect(score.stepsPerBeat).toBe(8);
     expect(score.notes.map((n) => n.step)).toEqual(Array.from({ length: 32 }, (_, i) => i));
+  });
+
+  it('같은 북을 아주 짧은 간격으로 약-강 두 번 치면 플램으로 읽는다', () => {
+    const { score } = parseMidi(midi([[0, 9, 36, 100], [455, 9, 38, 40], [480, 9, 38, 120], [960, 9, 38, 100]]));
+    const snare = score.notes.filter((n) => n.instrument === 'snare');
+    expect(snare.map((n) => [n.step, !!n.flam])).toEqual([[4, true], [8, false]]);
   });
 });

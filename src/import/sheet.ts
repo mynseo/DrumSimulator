@@ -251,6 +251,8 @@ interface Chord {
   accent: boolean;
   open: boolean;
   closed: boolean;
+  /** 앞에 꾸밈음이 붙은 머리들 = 플램 */
+  flam?: Head[];
 }
 interface RestEv {
   x: number;
@@ -275,7 +277,7 @@ export interface ReadMeasure {
   x0: number;
   x1: number;
   /** 박 위치 → 악기 */
-  notes: { beat: number; instrument: Instrument; velocity: number }[];
+  notes: { beat: number; instrument: Instrument; velocity: number; flam?: boolean }[];
   /** 박자를 계산하지 못해 위치로 어림했다 */
   approximate: boolean;
   /** 실제 길이(박). 못갖춘마디면 박자표보다 짧다 */
@@ -300,7 +302,7 @@ interface StaffItems {
   segs: Segment[];
 }
 
-function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode: { ride: boolean }, texts: Text[]): ReadMeasure[] {
+function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode: { ride: boolean }, texts: Text[], pieceStart: boolean): ReadMeasure[] {
   const s = st.s;
   const { glyphs, segs } = items;
 
@@ -424,8 +426,9 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
   // 빗금만으로는 모른다: 버즈·림샷 표시도 같은 기호다. 꾸밈음은 빔 없이 꼬리가 달린 기둥에 빗금이 그어진다
   const slashed = (v: (typeof stems)[number]) => slashes.some(({ g }) => Math.abs(g.x + g.width / 2 - v.x) < 1.2 * s && g.y >= v.lo - s && g.y <= v.hi + s);
 
-  // 화음(같은 기둥을 공유하는 머리들)
+  // 화음(같은 기둥을 공유하는 머리들). 꾸밈음은 따로 모아 바로 뒤 화음의 플램으로 붙인다
   const chords: Chord[] = [];
+  const graces: Head[][] = [];
   const byStem = new Map<unknown, Head[]>();
   for (const h of heads) {
     const ref = stemOf.get(h);
@@ -434,7 +437,10 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
   }
   for (const [key, hs] of byStem) {
     const ref = stemOf.get(hs[0]);
-    if (hs.every((h) => h.size < headSize * 0.8)) continue; // 작은 머리 = 꾸밈음
+    if (hs.every((h) => h.size < headSize * 0.8)) {
+      graces.push(hs); // 작은 머리 = 꾸밈음
+      continue;
+    }
     const kind = hs[0].kind;
     let base = kind === 'whole' ? 4 : kind === 'half' ? 2 : 1;
     const x = Math.min(...hs.map((h) => h.x));
@@ -454,7 +460,10 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
       for (const f of flags) {
         if (f.g.x >= v.x - 0.6 && f.g.x <= v.x + 2.5 * s && Math.abs(f.g.y - far) < 3.5 * s) flagged = Math.max(flagged, (f.sym as { n: number }).n);
       }
-      if (flagged && !n && slashed(v)) continue;
+      if (flagged && !n && slashed(v)) {
+        graces.push(hs);
+        continue;
+      }
       n = Math.max(n, flagged);
       base /= 2 ** n;
     } else if (kind !== 'whole' && kind !== 'half') {
@@ -473,6 +482,13 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
     const closed = closes.some(({ g }) => above(g));
     void key;
     chords.push({ heads: hs, x, voice, beats, stemX, accent, open, closed });
+  }
+
+  // 꾸밈음 → 오른쪽으로 가장 가까운 화음(4칸 안)이 플램
+  for (const g of graces) {
+    const gx = Math.max(...g.map((h) => h.x));
+    const target = chords.filter((c) => c.x > gx && c.x - gx < 4 * s && c.heads.some((h) => h.pos >= 3)).sort((a, b) => a.x - b.x)[0];
+    if (target) target.flam = [...(target.flam ?? []), ...g];
   }
 
   const rests: RestEv[] = glyphs
@@ -515,16 +531,12 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
 
   // 마디마다 성부별로 박 위치 계산
   const out: ReadMeasure[] = [];
-  edges.forEach((e, idx) => {
+  edges.forEach((e) => {
     const inM = (x: number) => x >= e.x0 && x < e.x1;
     const cs = chords.filter((c) => inM(c.x));
     const rs = rests.filter((r) => inM(r.x));
     if (!cs.length && !rs.length) return; // 음자리표·조표만 있는 머리 부분
-    const voices = new Set(cs.map((c) => c.voice));
-    const restVoice = (r: RestEv): 1 | 2 => {
-      if (voices.size < 2) return voices.has(2) ? 2 : 1;
-      return r.y >= st.bottom + 2 * s ? 1 : 2;
-    };
+    const restVoice = assignRests(cs, rs, s, st.bottom + 2 * s, beatsPerBar, (c) => c.beats * (tupletScale.get(c) ?? 1), (r) => r.beats * (tupletScale.get(r) ?? 1));
     const notes: ReadMeasure['notes'] = [];
     // "ride"·"H.H" 글씨로 하이햇 자리의 X 음표를 라이드로 바꾼다: 글씨보다 오른쪽 음표부터
     const switches = texts
@@ -540,24 +552,24 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
     let approximate = false;
     let length = beatsPerBar;
     const timed: { x: number; beat: number }[] = [];
-    const pending: { c: Chord; v: 1 | 2 }[] = [];
+    const pending: { c: Chord; v: 1 | 2; d: number }[] = [];
     for (const v of [1, 2] as const) {
       type Ev = { x: number; beats: number; chord?: Chord };
       const evs: Ev[] = [
         ...cs.filter((c) => c.voice === v).map((c) => ({ x: c.x, beats: c.beats * (tupletScale.get(c) ?? 1), chord: c })),
         // 온마디 쉼표는 음표가 있는 성부의 것이 아니다 (다른 성부가 이 마디를 쉰다는 뜻)
-        ...rs.filter((r) => restVoice(r) === v && !r.measure).map((r) => ({ x: r.x, beats: r.beats * (tupletScale.get(r) ?? 1) })),
+        ...rs.filter((r) => restVoice.get(r) === v && !r.measure).map((r) => ({ x: r.x, beats: r.beats * (tupletScale.get(r) ?? 1) })),
       ].sort((a, b) => a.x - b.x);
       if (!evs.some((x) => x.chord)) continue;
       const total = evs.reduce((sum, x) => sum + x.beats, 0);
       let start = 0;
       if (Math.abs(total - beatsPerBar) > 1e-6) {
-        // 못갖춘마디(첫 마디): 끝에 붙인다. 그 밖에는 위치로 어림
-        if (idx === 0 && out.length === 0 && total < beatsPerBar) {
+        // 곡의 첫 마디가 짧으면 못갖춘마디: 끝에 붙인다. 그 밖에는 위치로 어림 (쉼표를 숨긴 악보도 많다)
+        if (pieceStart && out.length === 0 && total < beatsPerBar) {
           start = beatsPerBar - total;
           length = Math.min(length, total);
         } else {
-          for (const x of evs) if (x.chord) pending.push({ c: x.chord, v });
+          for (const x of evs) if (x.chord) pending.push({ c: x.chord, v, d: x.beats });
           continue;
         }
       }
@@ -569,25 +581,37 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
       }
     }
     if (pending.length) {
-      // 다른 성부에서 구한 (위치, 박)과 마디 양 끝으로 직선 보간
-      const anchors = [{ x: e.x0 + 2.5 * s, beat: 0 }, ...timed, { x: e.x1, beat: beatsPerBar }].sort((a, b) => a.x - b.x);
-      for (const { c } of pending) {
-        const i = anchors.findIndex((a) => a.x >= c.x);
-        const a = anchors[Math.max(0, i - 1)];
-        const b = anchors[Math.max(0, i)];
-        const u = b.x > a.x ? (c.x - a.x) / (b.x - a.x) : 0;
-        const beat = Math.round((a.beat + (b.beat - a.beat) * u) * 12) / 12;
-        // 다른 성부의 음과 같은 세로줄이면 정확한 박이다. 그 밖은 어림
-        if (!timed.some((t) => Math.abs(t.x - c.x) < 0.6 * s)) approximate = true;
-        addChord(c, Math.min(beatsPerBar - 1 / 12, Math.max(0, beat)));
+      // 길이가 안 맞는 성부(숨긴 쉼표 등): 다른 성부에서 구한 (위치, 박)으로 자리를 찾는다.
+      // 이 마디에서 실제로 쓰인 박 나눔(16분·셋잇단 등) 위에서, 음 길이 순서를 지키며 위치가 가장 가까운 박을 고른다
+      const fits = (g: number) => timed.every((t) => Math.abs(t.beat * g - Math.round(t.beat * g)) < 1e-6);
+      const grid = [4, 3, 8, 6, 12].find(fits) ?? 12;
+      for (const v of [1, 2] as const) {
+        const list = pending.filter((p) => p.v === v);
+        if (!list.length) continue;
+        const beats = placeByPosition(list.map((p) => ({ x: p.c.x, d: p.d })), timed, e.x0 + 2.5 * s, e.x1 - s, beatsPerBar, grid, 0.6 * s);
+        list.forEach((p, i) => {
+          // 다른 성부의 음과 같은 세로줄이면 정확한 박이다. 그 밖은 어림
+          if (!timed.some((t) => Math.abs(t.x - p.c.x) < 0.6 * s)) approximate = true;
+          addChord(p.c, beats[i]);
+        });
       }
     }
     function addChord(c: Chord, beat: number) {
       const velocity = c.accent ? VELOCITY.accent : VELOCITY.normal;
+      const added: ReadMeasure['notes'] = [];
       for (const h of c.heads) {
         let instrument = instrumentAt(h, c.open);
         if (instrument === 'hihatClosed' && !c.closed && rideAt(c.x)) instrument = 'ride';
-        if (!notes.some((n) => Math.abs(n.beat - beat) < 1e-6 && n.instrument === instrument)) notes.push({ beat, instrument, velocity });
+        if (notes.some((n) => Math.abs(n.beat - beat) < 1e-6 && n.instrument === instrument)) continue;
+        const note = { beat, instrument, velocity };
+        notes.push(note);
+        added.push(note);
+      }
+      if (c.flam) {
+        // 꾸밈음과 같은 높이의 머리(같은 북)에 플램. 없으면 손으로 치는 첫 음
+        const hand = added.filter((n) => n.instrument !== 'kick' && n.instrument !== 'hihatPedal');
+        const same = hand.filter((n) => c.flam!.some((g) => instrumentAt(g, false) === n.instrument || Math.abs(g.pos - posOfInstrument(c, n.instrument)) <= 1));
+        for (const n of same.length ? same : hand.slice(0, 1)) n.flam = true;
       }
     }
     if (switches.length) cymbalMode.ride = switches[switches.length - 1].ride;
@@ -597,6 +621,137 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
   return out;
 }
 
+/**
+ * 쉼표가 어느 성부 것인지 정한다.
+ * 가운데 줄에서 확실히 위·아래로 비켜 있으면 그 위치대로. 가운데 근처의 애매한 쉼표(MuseScore는 두 성부 쉼표를
+ * 모두 가운데 둘 때가 많다)는 두 성부의 길이 합이 마디 길이에 가장 잘 맞도록 나눈다.
+ * 그 성부 음표와 같은 세로줄에 있는 쉼표는 그 성부 것이 될 수 없다.
+ */
+function assignRests(
+  cs: Chord[],
+  rs: RestEv[],
+  s: number,
+  mid: number,
+  beatsPerBar: number,
+  chordBeats: (c: Chord) => number,
+  restBeats: (r: RestEv) => number,
+): Map<RestEv, 1 | 2> {
+  const out = new Map<RestEv, 1 | 2>();
+  const voices = new Set(cs.map((c) => c.voice));
+  const clash = (r: RestEv, v: 1 | 2) => cs.some((c) => c.voice === v && Math.abs(c.x - r.x) < 0.6 * s);
+  const loose: RestEv[] = [];
+  for (const r of rs) {
+    if (r.measure) out.set(r, voices.has(1) ? 2 : 1);
+    else if (clash(r, 1) && !clash(r, 2)) out.set(r, 2);
+    else if (clash(r, 2) && !clash(r, 1)) out.set(r, 1);
+    else if (voices.size === 2 && r.y >= mid + s) out.set(r, 1);
+    else if (voices.size === 2 && r.y <= mid - s) out.set(r, 2);
+    else loose.push(r);
+  }
+  const sums = (extra: Map<RestEv, 1 | 2>) => {
+    const t = { 1: 0, 2: 0 };
+    for (const c of cs) t[c.voice] += chordBeats(c);
+    for (const [r, v] of extra) if (!r.measure) t[v] += restBeats(r);
+    return t;
+  };
+  const score = (m: Map<RestEv, 1 | 2>) => {
+    const t = sums(m);
+    let fit = 0;
+    let dev = 0;
+    for (const v of [1, 2] as const) {
+      if (!voices.has(v) && t[v] === 0) continue;
+      if (Math.abs(t[v] - beatsPerBar) < 1e-6) fit++;
+      dev += t[v] > beatsPerBar + 1e-6 ? 10 * (t[v] - beatsPerBar) : beatsPerBar - t[v];
+    }
+    return fit * 100 - dev;
+  };
+  if (loose.length <= 10) {
+    let best = new Map(out);
+    let bestScore = -Infinity;
+    for (let mask = 0; mask < 1 << loose.length; mask++) {
+      const m = new Map(out);
+      loose.forEach((r, i) => m.set(r, mask & (1 << i) ? 2 : 1));
+      // 음표가 한 성부뿐이면 쉼표도 그쪽을 우선한다 (동점일 때 앞선 마스크가 남는다)
+      const sc = score(m);
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = m;
+      }
+    }
+    return best;
+  }
+  const only: 1 | 2 = voices.has(2) && !voices.has(1) ? 2 : 1;
+  for (const r of loose) out.set(r, voices.size === 2 ? (r.y >= mid ? 1 : 2) : only);
+  return out;
+}
+
+/**
+ * 길이 합이 안 맞는 성부의 음을 박에 놓는다.
+ * 박 → x 위치를 알려진 (x, 박) 점들로 보간해, 각 음의 x와 가장 가까운 격자 박을 고르되
+ * 앞 음이 끝난 뒤에 다음 음이 오고(숨긴 쉼표는 허용) 마지막 음이 마디 안에서 끝나게 한다 (동적 계획법).
+ */
+export function placeByPosition(
+  evs: { x: number; d: number }[],
+  known: { x: number; beat: number }[],
+  xStart: number,
+  xEnd: number,
+  beatsPerBar: number,
+  grid: number,
+  same: number,
+): number[] {
+  const pts = [...known].sort((a, b) => a.beat - b.beat || a.x - b.x);
+  if (!pts.some((p) => p.beat === 0)) pts.unshift({ x: xStart, beat: 0 });
+  pts.push({ x: Math.max(xEnd, pts[pts.length - 1].x + 1), beat: beatsPerBar });
+  const xOf = (b: number) => {
+    let i = pts.findIndex((p) => p.beat >= b);
+    if (i <= 0) return pts[Math.max(0, i)].x;
+    const a = pts[i - 1];
+    const c = pts[i];
+    return c.beat > a.beat ? a.x + ((c.x - a.x) * (b - a.beat)) / (c.beat - a.beat) : c.x;
+  };
+  const n = beatsPerBar * grid;
+  const slots = Array.from({ length: n }, (_, k) => k / grid);
+  const cost = evs.map((e) => {
+    const exact = known.find((p) => Math.abs(p.x - e.x) < same);
+    return slots.map((b) => (exact ? (Math.abs(b - exact.beat) < 1e-6 ? 0 : 1e6) : Math.abs(xOf(b) - e.x)));
+  });
+  const INF = 1e12;
+  const dp = evs.map(() => new Array(n).fill(INF));
+  const from = evs.map(() => new Array(n).fill(-1));
+  for (let k = 0; k < n; k++) dp[0][k] = cost[0][k];
+  for (let i = 1; i < evs.length; i++) {
+    for (let k = 0; k < n; k++) {
+      for (let j = 0; j < k; j++) {
+        // 앞 음 길이보다 일찍 오면 큰 벌점 (악보가 틀렸을 수도 있으니 금지하지는 않는다)
+        const early = slots[j] + evs[i - 1].d > slots[k] + 1e-6 ? 50 : 0;
+        const c = dp[i - 1][j] + cost[i][k] + early;
+        if (c < dp[i][k]) {
+          dp[i][k] = c;
+          from[i][k] = j;
+        }
+      }
+    }
+  }
+  const last = evs.length - 1;
+  let bestK = 0;
+  for (let k = 0; k < n; k++) {
+    const over = slots[k] + evs[last].d > beatsPerBar + 1e-6 ? 50 : 0;
+    const bestOver = slots[bestK] + evs[last].d > beatsPerBar + 1e-6 ? 50 : 0;
+    if (dp[last][k] + over < dp[last][bestK] + bestOver) bestK = k;
+  }
+  const out = new Array(evs.length).fill(0);
+  for (let i = last, k = bestK; i >= 0; i--) {
+    out[i] = slots[k];
+    k = from[i][k] >= 0 ? from[i][k] : k;
+  }
+  return out;
+}
+
+/** 화음 안에서 그 악기로 읽힌 머리의 오선 위치 */
+function posOfInstrument(c: Chord, instrument: Instrument): number {
+  return c.heads.find((h) => instrumentAt(h, c.open) === instrument)?.pos ?? -99;
+}
+
 /** 오선 위치·머리 모양 → 악기 (드럼 악보에서 가장 흔한 표기) */
 function instrumentAt(h: Head, open: boolean): Instrument {
   const p = h.pos;
@@ -604,7 +759,8 @@ function instrumentAt(h: Head, open: boolean): Instrument {
     if (p <= -1) return 'hihatPedal';
     if (p >= 10) return 'crash';
     if (p === 8) return 'ride';
-    if (p === 9) return open ? 'hihatOpen' : 'hihatClosed';
+    // 동그라미 X는 열린 하이햇 (MuseScore 기본 드럼 세트)
+    if (p === 9) return open || h.kind === 'circleX' ? 'hihatOpen' : 'hihatClosed';
     return 'snare'; // 크로스 스틱
   }
   if (p <= 2) return 'kick';
@@ -725,7 +881,8 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
     for (const sys of systems) {
       const group = sys.filter((st) => drums.includes(st));
       if (!group.length) continue;
-      const read = group.map((st) => readStaff(st, items.get(st)!, beatsPerBar, cymbalMode, texts));
+      const pieceStart = slots.length === 0;
+      const read = group.map((st) => readStaff(st, items.get(st)!, beatsPerBar, cymbalMode, texts, pieceStart));
       const main = read[0];
       if (!main.length) continue;
       // 줄 이름표 <2x>, <D.S time>
@@ -819,7 +976,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   if (order.length === MAX_BARS) warnings.push(`너무 길어서 앞 ${MAX_BARS}마디만 불러왔어요`);
 
   // 박 위치 → 칸
-  const placed: { beat: number; instrument: Instrument; velocity: number }[] = [];
+  const placed: { beat: number; instrument: Instrument; velocity: number; flam?: boolean }[] = [];
   let approximated = 0;
   order.forEach(({ m }, bar) => {
     if (m.approximate) approximated++;
@@ -833,11 +990,11 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
     const key = `${step}:${n.instrument}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    notes.push({ step, instrument: n.instrument, velocity: n.velocity });
+    notes.push({ step, instrument: n.instrument, velocity: n.velocity, ...(n.flam ? { flam: true } : {}) });
   }
   if (!notes.length) throw new Error('드럼 음표를 찾지 못했어요');
   const uniq = new Set(order.map((o) => o.slot)).size;
-  if (approximated) warnings.push(`${approximated}마디는 박자를 위치로 어림했어요`);
+  if (approximated) warnings.push(`${approximated}마디는 쉼표가 생략돼 음 위치로 박을 맞췄어요`);
 
   return {
     score: {

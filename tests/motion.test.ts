@@ -66,6 +66,35 @@ describe('드러머 자세', () => {
     }
   });
 
+  it('오른쪽 크래시도 스틱 끝이 정확히 닿고, 악센트는 고스트보다 훨씬 높이 든다', () => {
+    const kit = new DrumKit();
+    const planner = new MotionPlanner(kit);
+    const sc: Score = {
+      version: 1, title: 'c2', bpm: 90, beatsPerBar: 4, stepsPerBeat: 4, bars: 1,
+      notes: [
+        { step: 0, instrument: 'crash2', velocity: 1 },
+        { step: 0, instrument: 'kick', velocity: 1 },
+        { step: 8, instrument: 'snare', velocity: 1 },
+        { step: 12, instrument: 'snare', velocity: 0.35 },
+      ],
+    };
+    const tl = buildTimeline(sc);
+    const c2 = tl.byPiece.crash2[0];
+    expect(c2.limb).toBe('RH');
+    const pose = planner.compute(tl, c2.time, true);
+    expect(pose.RH.tip.distanceTo(kit.strikePoint('crash2'))).toBeLessThan(1e-6);
+    // 같은 간격(4칸) 앞의 가장 높은 지점: 악센트 스네어(8) vs 고스트 스네어(12)
+    const peak = (hit: number) => {
+      const h = tl.hits[hit];
+      const limb = h.limb as 'RH' | 'LH';
+      let max = 0;
+      for (let t = h.time - 0.3; t < h.time; t += 0.005) max = Math.max(max, planner.compute(tl, t, false)[limb].lift);
+      return max;
+    };
+    const snares = tl.hits.map((h, i) => [h, i] as const).filter(([h]) => h.instrument === 'snare').map(([, i]) => i);
+    expect(peak(snares[0])).toBeGreaterThan(peak(snares[1]) * 2);
+  });
+
   it('직접 연주: 친 직후 스틱이 그 드럼에 닿고, 잠시 뒤 원래 자세로 돌아간다', () => {
     const kit = new DrumKit();
     const planner = new MotionPlanner(kit);

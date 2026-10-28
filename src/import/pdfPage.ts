@@ -179,7 +179,9 @@ export async function readPage(page: PdfPageLike): Promise<PageContent> {
           segments.push({ x1: a[0], y1: a[1], x2: b[0], y2: b[1], width: lw });
         }
       } else if (p.length >= 3) {
-        segments.push(fillToSegment(p));
+        const seg = fillToSegment(p);
+        // 배경·글상자처럼 큰 면은 선이 아니다 (빔·굵은 마디줄은 두께가 몇 pt 안 된다)
+        if (seg.width < 20) segments.push(seg);
       }
     }
     path = [];

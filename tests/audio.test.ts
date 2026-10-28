@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { findOnset, pickLayer } from '../src/audio/kits/sampled';
 import { SOUND_KITS } from '../src/audio/AudioEngine';
+import { level } from '../src/audio/kits/synth';
+import { VELOCITY } from '../src/core/instruments';
 
 describe('샘플 킷', () => {
   it('세기에 맞는 녹음을 고른다', () => {
@@ -24,5 +26,13 @@ describe('샘플 킷', () => {
   it('킷 id가 겹치지 않는다', () => {
     const ids = SOUND_KITS.map((k) => k.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('셈여림', () => {
+  it('고스트·보통·악센트의 소리 크기 차이가 확실하다', () => {
+    const db = (a: number, b: number) => 20 * Math.log10(level(a) / level(b));
+    expect(db(VELOCITY.normal, VELOCITY.ghost)).toBeGreaterThan(8);
+    expect(db(VELOCITY.accent, VELOCITY.normal)).toBeGreaterThan(3.5);
   });
 });

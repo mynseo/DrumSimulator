@@ -67,6 +67,8 @@ export class DrumKit {
     this.buildDrum('floorTom', new THREE.Vector3(0.46, 0.5, -0.14), 0.2, 0.4, 0.05, new THREE.Vector3(-0.04, 0, 0.05));
     this.buildKick();
     this.buildCymbal('crash', new THREE.Vector3(-0.52, 1.38, -0.55), 0.23, 0.35, -0.3, new THREE.Vector3(0.05, 0, 0.18));
+    // 오른쪽 크래시: 라이드 안쪽 뒤 위. 라이드보다 높고 조금 작다 (얼굴을 가리지 않게 바깥쪽으로)
+    this.buildCymbal('crash2', new THREE.Vector3(0.72, 1.34, -0.66), 0.21, 0.38, 0.32, new THREE.Vector3(-0.09, 0, 0.15));
     this.buildCymbal('ride', new THREE.Vector3(0.68, 1.12, -0.42), 0.28, 0.25, 0.25, new THREE.Vector3(-0.1, 0, 0.12));
     this.buildHihat(new THREE.Vector3(-0.5, 0.92, -0.14));
     this.buildThrone();
@@ -103,27 +105,29 @@ export class DrumKit {
       if (l && (!flash || l.age < flash.age)) flash = l;
       const age = flash ? flash.age : Infinity;
       const active = age >= 0 && age < FEEDBACK_TIME;
-      const k = active ? (1 - age / FEEDBACK_TIME) ** 2 * (0.4 + 0.6 * flash!.velocity) : 0;
+      // 세기가 확실히 보이게: 고스트는 은은하게 작은 파문, 악센트는 밝게 크게 퍼지는 파문
+      const v = flash ? flash.velocity : 0;
+      const k = active ? (1 - age / FEEDBACK_TIME) ** 2 * (0.12 + 0.88 * v * v) : 0;
       const color = active && flash!.limb ? LIMB_COLORS[flash!.limb] : 0xffffff;
       for (const m of p.glow) {
         m.emissive.setHex(color);
-        m.emissiveIntensity = k * 1.6;
+        m.emissiveIntensity = k * 2;
       }
       const ringMat = p.ring.material as THREE.MeshBasicMaterial;
       ringMat.color.setHex(color);
       ringMat.opacity = k * 0.9;
       p.ring.visible = k > 0.01;
-      const s = 1 + (active ? age : 0) * 5;
+      const s = (0.6 + 0.6 * v) * (1 + (active ? age : 0) * (2 + 7 * v * v));
       p.ring.scale.set(s, s, s);
 
       if (p.cymbal) {
         // 한 번도 안 맞은 심벌은 age가 Infinity: sin(Infinity)는 NaN이므로 따로 처리한다
         const ringing = age >= 0 && age < 1.5;
-        const amp = ringing ? Math.exp(-age * 3.5) * 0.09 * flash!.velocity : 0;
+        const amp = ringing ? Math.exp(-age * 3.5) * 0.12 * v ** 1.5 : 0;
         p.wobble.rotation.x = ringing ? Math.sin(age * 22) * amp : 0;
         p.wobble.rotation.z = ringing ? Math.cos(age * 17) * amp * 0.6 : 0;
       } else if (id !== 'kick') {
-        p.wobble.position.y = active ? -Math.sin(Math.min(1, age / 0.06) * Math.PI) * 0.006 : 0;
+        p.wobble.position.y = active ? -Math.sin(Math.min(1, age / 0.06) * Math.PI) * 0.01 * v ** 1.5 : 0;
       }
     }
 
