@@ -1,3 +1,4 @@
+import { chooseSubdivision } from '../core/grid';
 import type { Instrument, Score, ScoreNote } from '../core/types';
 
 /** General MIDI 드럼 맵 (채널 10) → 시뮬레이터 악기 */
@@ -28,7 +29,7 @@ export interface MidiImportResult {
   skipped: number;
 }
 
-/** 표준 MIDI 파일(.mid)을 16분음표 격자로 양자화해 악보로 바꾼다. */
+/** 표준 MIDI 파일(.mid)을 가장 잘 맞는 격자(16분음표·셋잇단·32분음표 등)로 양자화해 악보로 바꾼다. */
 export function parseMidi(buffer: ArrayBuffer, title = 'MIDI 가져오기'): MidiImportResult {
   const r = new Reader(new DataView(buffer));
   if (r.str(4) !== 'MThd') throw new Error('MIDI 파일이 아닙니다 (MThd 헤더 없음)');
@@ -92,7 +93,9 @@ export function parseMidi(buffer: ArrayBuffer, title = 'MIDI 가져오기'): Mid
   const hasDrumChannel = raw.some((n) => n.channel === DRUM_CHANNEL);
   const source = hasDrumChannel ? raw.filter((n) => n.channel === DRUM_CHANNEL) : raw;
 
-  const stepsPerBeat = 4;
+  // 16분음표·셋잇단·32분음표 중 음들이 가장 잘 맞는 격자
+  const mapped = source.filter((n) => GM_DRUM_MAP[n.key]);
+  const stepsPerBeat = chooseSubdivision(mapped.map((n) => ({ beat: n.tick / division, weight: n.velocity / 127 })));
   const ticksPerStep = division / stepsPerBeat;
   const seen = new Set<string>();
   const notes: ScoreNote[] = [];

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { PRESETS } from '../src/core/presets';
+import { MIN_SAME_HAND_GAP } from '../src/core/sticking';
+import type { Score } from '../src/core/types';
 import { buildTimeline } from '../src/core/timeline';
 import { LiveMotion } from '../src/motion/LiveMotion';
 import { MotionPlanner } from '../src/motion/MotionPlanner';
@@ -32,6 +34,35 @@ describe('드러머 자세', () => {
       const pose = planner.compute(tl, h.time, true);
       expect(pose.RH.lift).toBeCloseTo(0, 5);
       expect(pose.RH.tip.distanceTo(kit.strikePoint(h.piece))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('셋잇단·16분·32분음표도 모든 음을 손을 번갈아 가며 실제로 내려친다', () => {
+    const kit = new DrumKit();
+    const planner = new MotionPlanner(kit);
+    const cases: [number, number][] = [[3, 120], [4, 140], [6, 110], [8, 100], [12, 90]];
+    for (const [spb, bpm] of cases) {
+      const steps = spb * 4;
+      const score: Score = {
+        version: 1, title: 'roll', bpm, beatsPerBar: 4, stepsPerBeat: spb, bars: 1,
+        notes: Array.from({ length: steps }, (_, step) => ({ step, instrument: step % spb === 0 ? 'tom1' : 'snare', velocity: 0.8 })),
+      };
+      const tl = buildTimeline(score);
+      const handHits = [...tl.byLimb.RH, ...tl.byLimb.LH];
+      expect(handHits.length, `${spb}칸`).toBe(steps);
+      for (const limb of ['RH', 'LH'] as const) {
+        const hits = tl.byLimb[limb];
+        for (let i = 0; i < hits.length; i++) {
+          if (i > 0) expect(hits[i].time - hits[i - 1].time, `${spb}칸 ${limb} 연타 간격`).toBeGreaterThanOrEqual(MIN_SAME_HAND_GAP - 1e-9);
+          const pose = planner.compute(tl, hits[i].time, true);
+          expect(pose[limb].lift, `${spb}칸 ${limb} ${i}`).toBeCloseTo(0, 5);
+          // 다음 타격 전에는 스틱을 다시 들어 올린다
+          if (i + 1 < hits.length) {
+            const mid = planner.compute(tl, (hits[i].time + hits[i + 1].time) / 2, true);
+            expect(mid[limb].lift, `${spb}칸 ${limb} ${i} 사이`).toBeGreaterThan(0.01);
+          }
+        }
+      }
     }
   });
 

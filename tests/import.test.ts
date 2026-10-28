@@ -84,4 +84,26 @@ describe('MIDI', () => {
     ]);
     expect(score.bars).toBe(2);
   });
+
+  it('셋잇단으로 친 곡은 셋잇단 격자로 가져온다', () => {
+    // 셔플: 매 박의 첫째·셋째 셋잇단에 하이햇, 2·4박 스네어
+    const events: [number, number, number, number][] = [];
+    for (let beat = 0; beat < 8; beat++) {
+      events.push([beat * 480, 9, 42, 90], [beat * 480 + 320, 9, 42, 70]);
+      if (beat % 2 === 1) events.push([beat * 480, 9, 38, 110]);
+    }
+    events.sort((a, b) => a[0] - b[0]);
+    const { score } = parseMidi(midi(events));
+    expect(score.stepsPerBeat).toBe(3);
+    const hats = score.notes.filter((n) => n.instrument === 'hihatClosed').map((n) => n.step);
+    expect(hats.slice(0, 4)).toEqual([0, 2, 3, 5]);
+  });
+
+  it('32분음표 롤은 32분 격자로 가져온다', () => {
+    const events: [number, number, number, number][] = [];
+    for (let i = 0; i < 32; i++) events.push([i * 60, 9, 38, 100]);
+    const { score } = parseMidi(midi(events));
+    expect(score.stepsPerBeat).toBe(8);
+    expect(score.notes.map((n) => n.step)).toEqual(Array.from({ length: 32 }, (_, i) => i));
+  });
 });

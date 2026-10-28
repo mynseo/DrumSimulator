@@ -1,4 +1,5 @@
 import { VELOCITY } from '../core/instruments';
+import { fitSubdivision, TOLERANCE } from '../core/grid';
 import type { Instrument, Score, ScoreNote } from '../core/types';
 
 /**
@@ -8,7 +9,7 @@ import type { Instrument, Score, ScoreNote } from '../core/types';
  * 2. 대역마다 소리가 갑자기 커지는 순간(타격)을 찾는다:
  *    낮은 소리 = 킥, 중간(몸통 + 스내피 잡음) = 스네어, 아주 높은 소리 = 하이햇·심벌.
  * 3. 전체 타격 흐름에서 빠르기(BPM)와 박 위치를 찾고, 킥·스네어 배치로 마디 첫 박을 정한다.
- * 4. 16분음표 격자에 맞춰 악보를 만든다.
+ * 4. 타격 위치에 맞는 격자(16분음표·셋잇단·32분음표 등)를 골라 악보를 만든다.
  *
  * 드럼만 녹음된 음원이나 드럼이 크게 들리는 곡에서 잘 맞는다. 베이스·기타가 큰 곡에서는
  * 베이스를 킥으로, 기타를 하이햇으로 착각할 수 있다.
@@ -18,7 +19,6 @@ import type { Instrument, Score, ScoreNote } from '../core/types';
 export const ANALYSIS_RATE = 22050;
 const FRAME = 1024;
 const HOP = 256;
-const STEPS_PER_BEAT = 4;
 const MAX_BARS = 128;
 
 /** 분석에 쓰는 주파수 대역 (Hz) */
@@ -60,23 +60,15 @@ export async function analyzeDrums(samples: Float32Array, sampleRate: number, op
   if (sampleRate !== ANALYSIS_RATE) throw new Error(`${ANALYSIS_RATE}Hz로 바꿔서 넣어 주세요`);
   const frameTime = HOP / sampleRate;
 
-  const spec = await spectrogram(samples, opts.onProgress);
-  const flux = {} as Record<Band, Float32Array>;
-  const energy = {} as Record<Band, Float32Array>;
-  for (const band of BAND_NAMES) {
-    const bins = bandBins([BANDS[band] as unknown as [number, number]], sampleRate);
-    flux[band] = bandFlux(spec, bins);
-    energy[band] = bandEnergy(spec, bins);
-  }
+  const spec = await analyzeSpectrum(samples, sampleRate, opts.onProgress);
 
   // 1) 대역마다 따로 타격을 찾고 2) 다른 악기에서 새어 든 것을 걸러 악기를 정한다
-  const hits = detectHits(flux, energy, spec, sampleRate);
+  const hits = detectHits(spec, sampleRate);
   if (hits.length < 4) throw new Error('드럼 소리를 거의 찾지 못했어요');
 
   // 3) 빠르기·박·마디 첫 박 (하이햇은 빼고 킥·스네어 리듬으로)
   const backbone = hits.filter((h) => h.instruments.some((i) => i === 'kick' || i === 'snare'));
-  const period = estimatePeriod(backbone.length >= 8 ? backbone : hits, spec.length);
-  const bpm = 60 / (period * frameTime);
+  let period = estimatePeriod(backbone.length >= 8 ? backbone : hits, spec.frames);
   const phase = estimatePhase(backbone.length >= 8 ? backbone : hits, period);
   const downbeat = chooseDownbeat(hits, period, phase);
 
@@ -85,7 +77,16 @@ export async function analyzeDrums(samples: Float32Array, sampleRate: number, op
   const first = hits[0].frame;
   let start = phase + downbeat * period;
   start -= Math.ceil((start - first - period * 0.25) / barFrames) * barFrames;
-  const stepFrames = period / STEPS_PER_BEAT;
+  // 16분음표인지 셋잇단인지 32분음표인지: 타격들이 가장 잘 붙는 단순한 격자. 시작점·빠르기도 함께 다듬는다
+  // 타격 시각은 프레임(약 12ms) 단위로만 알 수 있으니 그만큼은 격자에서 벗어나도 맞는 것으로 본다
+  const tolerance = Math.max(TOLERANCE, 1.5 / period);
+  const grid = fitSubdivision(hits.map((h) => ({ beat: (h.frame - start) / period, weight: h.strength })), tolerance);
+  const stepsPerBeat = grid.subdivision;
+  start += grid.offset * period;
+  period *= grid.scale;
+  const bpm = 60 / (period * frameTime);
+  const stepFrames = period / stepsPerBeat;
+  const stepsInBar = 4 * stepsPerBeat;
 
   const notes: ScoreNote[] = [];
   const seen = new Set<string>();
@@ -94,7 +95,7 @@ export async function analyzeDrums(samples: Float32Array, sampleRate: number, op
     if (step < 0) continue;
     for (let instrument of h.instruments) {
       // 마디 첫 박의 오래 울리는 심벌은 크래시, 나머지는 열린 하이햇
-      if (instrument === 'hihatOpen' && step % (4 * STEPS_PER_BEAT) === 0) instrument = 'crash';
+      if (instrument === 'hihatOpen' && step % stepsInBar === 0) instrument = 'crash';
       const key = `${step}:${instrument}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -102,7 +103,6 @@ export async function analyzeDrums(samples: Float32Array, sampleRate: number, op
     }
   }
 
-  const stepsInBar = 4 * STEPS_PER_BEAT;
   const maxStep = notes.reduce((m, n) => Math.max(m, n.step), 0);
   const bars = Math.min(MAX_BARS, Math.max(1, Math.ceil((maxStep + 1) / stepsInBar)));
   notes.sort((a, b) => a.step - b.step);
@@ -112,7 +112,7 @@ export async function analyzeDrums(samples: Float32Array, sampleRate: number, op
       title: opts.title ?? '음원에서 뽑은 드럼',
       bpm: Math.round(bpm),
       beatsPerBar: 4,
-      stepsPerBeat: STEPS_PER_BEAT,
+      stepsPerBeat,
       bars,
       notes: notes.filter((n) => n.step < bars * stepsInBar),
     },
@@ -130,7 +130,8 @@ export async function analyzeDrums(samples: Float32Array, sampleRate: number, op
  * - 하이햇·심벌: 7kHz 위. 스네어 잡음·스틱 소리가 새어 들므로 같은 순간이면 더 커야 한다.
  *   울림이 길면 크래시, 중간이면 열린 하이햇
  */
-function detectHits(flux: Record<Band, Float32Array>, energy: Record<Band, Float32Array>, spec: Float32Array[], sampleRate: number): Hit[] {
+function detectHits(spec: Spectrum, sampleRate: number): Hit[] {
+  const { flux, energy } = spec;
   // 킥은 타격 직후 에너지가 90Hz 아래에 몰려 있다 (스네어·탐은 200~400Hz 쪽). 찌그러진 808 킥도 마찬가지다
   const subVsBody = (f: number) => {
     let sub = 0;
@@ -156,9 +157,21 @@ function detectHits(flux: Record<Band, Float32Array>, energy: Record<Band, Float
     const top = percentile(Float32Array.from(amps), 0.9) || 1;
     return peaks.map((p, i) => ({ ...p, strength: amps[i] / top })).filter((p) => p.strength >= ratio);
   };
-  const kicks = loud(pickPeaks(flux.sub, 3), energy.sub, 0.3).filter((p) => subVsBody(p.frame) > 1.5 && freshAttack(energy.sub, p.frame));
-  const bodies = loud(pickPeaks(flux.body, 3), energy.body, 0.25);
-  const highs = loud(pickPeaks(flux.hat, 2), energy.hat, 0.08);
+  const kickCandidates = loud(pickPeaks(flux.sub, 3), energy.sub, 0.3).filter((p) => subVsBody(p.frame) > 1.5 && freshAttack(energy.sub, p.frame));
+  // 비터 클릭: 실제 킥은 칠 때 1~4.5kHz에 짧은 '딱' 소리가 함께 난다(타격음 성분). 베이스 음은 없다.
+  // 이 곡의 큰 킥들 대부분에 클릭이 있으면, 클릭 없는 낮은 소리는 베이스로 보고 버린다 (808처럼 클릭 없는 킥은 그대로)
+  const click = (f: number) => Math.max(flux.noise[f] ?? 0, flux.noise[f + 1] ?? 0, flux.noise[f + 2] ?? 0);
+  const clickRef = percentile(Float32Array.from(kickCandidates.filter((k) => k.strength >= 0.6).map((k) => click(k.frame))), 0.5);
+  const noiseFloor = percentile(flux.noise, 0.5);
+  const kitHasClick = clickRef > noiseFloor * 4;
+  const kicks = kitHasClick ? kickCandidates.filter((k) => click(k.frame) > clickRef * 0.3) : kickCandidates;
+  // 기타·보컬·건반이 새로 울리기 시작하는 순간도 몸통 대역이 튄다. 그 순간 에너지 대부분이 지속음(같은 음높이가 이어지는 소리)이면
+  // 북을 친 것이 아니다: 스네어·탐은 타격 순간 에너지의 절반 가까이가 타격음 성분이다
+  const percussive = (f: number) => Math.max(spec.percShare[f] ?? 0, spec.percShare[f + 1] ?? 0, spec.percShare[f + 2] ?? 0) >= PERC_SHARE_MIN;
+  const bodies = loud(pickPeaks(flux.body, 3).filter((p) => percussive(p.frame)), energy.body, 0.25);
+  // 하이햇 세기는 원래 소리로 잰다: 808 하이햇처럼 금속성(선 스펙트럼) 소리는 HPSS에서 많이 약해지고,
+  // 기타·보컬은 이 대역(7kHz 위)에 거의 없다
+  const highs = loud(pickPeaks(flux.hat, 2), spec.hatRing, 0.03);
   const near = (list: Peak[], frame: number) => list.find((p) => Math.abs(p.frame - frame) <= 2);
 
   const hits = new Map<number, Hit>();
@@ -181,14 +194,14 @@ function detectHits(flux: Record<Band, Float32Array>, energy: Record<Band, Float
   const toms: { hit: Hit; pitch: number }[] = [];
   const membranes = new Map<number, 'snare' | 'tom'>();
   // 스네어 줄은 잡음(평탄한 스펙트럼), 탐은 음높이가 뚜렷하다. 킷마다 범위가 달라 이 곡 기준으로 나눈다
-  const flat = new Map(bodies.map((b) => [b.frame, flatness(spec, b.frame + 3, sampleRate)]));
+  const flat = new Map(bodies.map((b) => [b.frame, flatness(spec.low, b.frame + 3, sampleRate)]));
   const flatCut = 0.35 * percentile(Float32Array.from(flat.values()), 0.9);
   for (const b of bodies) {
     // 킥과 같은 순간인데 에너지가 거의 다 낮은 대역이면 킥이 새어 든 것이다
     if (near(kicks, b.frame) && subVsBody(b.frame) > 5) continue;
     if (flat.get(b.frame)! < flatCut) {
       const hit = add(b.frame, b.strength, 'tom2');
-      toms.push({ hit, pitch: lowPitch(spec, b.frame + 3, sampleRate) });
+      toms.push({ hit, pitch: lowPitch(spec.low, b.frame + 3, sampleRate) });
       membranes.set(b.frame, 'tom');
     } else {
       add(b.frame, b.strength, 'snare');
@@ -202,7 +215,7 @@ function detectHits(flux: Record<Band, Float32Array>, energy: Record<Band, Float
     if (m && h.strength < (m[1] === 'tom' ? 0.6 : 0.35)) continue;
     if (near(kicks, h.frame) && h.strength < 0.25) continue;
     // 오래 울리는 높은 소리는 크래시나 열린 하이햇: 소리만으로는 구분이 어려워 박자 위치로 나중에 정한다
-    add(h.frame, h.strength, decay(energy.hat, h.frame, 0.06, 0.12, sampleRate) > 0.06 ? 'hihatOpen' : 'hihatClosed');
+    add(h.frame, h.strength, decay(spec.hatRing, h.frame, 0.06, 0.12, sampleRate) > 0.06 ? 'hihatOpen' : 'hihatClosed');
   }
 
   // 탐은 이 곡에 나온 탐들끼리 음높이로 나눈다: 높은 쪽 = 하이 탐, 낮은 쪽 = 플로어 탐
@@ -233,6 +246,7 @@ function decay(energy: Float32Array, frame: number, from: number, to: number, sa
 
 /** 80~1000Hz 스펙트럼의 평탄도(0..1): 높으면 잡음(스네어 줄), 낮으면 음높이가 뚜렷(탐) */
 function flatness(spec: Float32Array[], frame: number, sampleRate: number): number {
+  // spec에는 1kHz 근처(LOW_BINS)까지만 들어 있다
   const s = spec[Math.min(frame, spec.length - 1)];
   const k0 = Math.ceil((80 * FRAME) / sampleRate);
   const k1 = Math.floor((1000 * FRAME) / sampleRate);
@@ -309,31 +323,163 @@ export function fft(re: Float32Array, im: Float32Array) {
   }
 }
 
-/** 프레임별 크기 스펙트럼. 긴 곡에서도 화면이 멈추지 않도록 중간중간 쉰다 */
-async function spectrogram(x: Float32Array, onProgress?: (p: number) => void): Promise<Float32Array[]> {
+/** 탐 음높이·스네어 평탄도를 볼 때 쓰는 낮은 주파수 칸 수 (~1kHz) */
+const LOW_BINS = Math.ceil((1000 * FRAME) / ANALYSIS_RATE) + 1;
+/** HPSS 중앙값 창: 시간 17프레임(약 0.2초), 주파수 17칸(약 370Hz) */
+const HPSS_TIME = 17;
+const HPSS_FREQ = 17;
+/**
+ * 이 주파수 아래는 HPSS를 하지 않고 원래 소리를 쓴다. 킥의 '둥' 소리는 낮고 길게 울리는 음이라
+ * 지속음으로 잘못 걸러지고, 낮은 주파수는 칸이 성겨서 주파수 방향 중앙값도 의미가 없다.
+ */
+const HPSS_MIN_HZ = 150;
+/** 이보다 지속음 비율이 높은 순간의 몸통 대역 타격은 기타·보컬로 본다 */
+const PERC_SHARE_MIN = 0.35;
+
+interface Spectrum {
+  frames: number;
+  /** 대역별 플럭스·에너지: 타격음 성분만 (지속음 제거) */
+  flux: Record<Band, Float32Array>;
+  energy: Record<Band, Float32Array>;
+  /** 원래 소리의 높은 대역 에너지: 심벌이 얼마나 오래 울리는지 볼 때 (지속음 제거 전) */
+  hatRing: Float32Array;
+  /** 200Hz~4.5kHz 에너지 중 타격음 성분의 비율: 기타·보컬 같은 지속음이 섞인 순간이면 작다 */
+  percShare: Float32Array;
+  /** 원래 소리의 낮은 주파수 스펙트럼 (탐 음높이·스네어 잡음 판단) */
+  low: Float32Array[];
+}
+
+/**
+ * STFT + HPSS(타격음·지속음 분리)를 프레임 단위로 흘려 가며 계산한다.
+ * - 지속음(기타·보컬·건반): 같은 주파수가 시간 방향으로 이어진다 → 시간 방향 중앙값이 크다
+ * - 타격음(드럼): 한 순간 여러 주파수에 넓게 퍼진다 → 주파수 방향 중앙값이 크다
+ * 둘을 비교한 마스크로 타격음 성분만 남긴 뒤 대역별 플럭스·에너지를 구한다.
+ * 곡 전체 스펙트로그램을 들고 있지 않아서 긴 곡도 메모리를 적게 쓴다.
+ */
+async function analyzeSpectrum(x: Float32Array, sampleRate: number, onProgress?: (p: number) => void): Promise<Spectrum> {
   const frames = Math.max(1, Math.floor((x.length - FRAME) / HOP) + 1);
+  const half = FRAME / 2;
   const win = new Float32Array(FRAME);
   for (let i = 0; i < FRAME; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FRAME - 1));
   const re = new Float32Array(FRAME);
   const im = new Float32Array(FRAME);
-  const out: Float32Array[] = [];
-  for (let f = 0; f < frames; f++) {
-    const o = f * HOP;
-    for (let i = 0; i < FRAME; i++) {
-      re[i] = (x[o + i] ?? 0) * win[i];
-      im[i] = 0;
+
+  const bins = {} as Record<Band, number[]>;
+  for (const band of BAND_NAMES) bins[band] = bandBins([BANDS[band] as unknown as [number, number]], sampleRate);
+  const flux = {} as Record<Band, Float32Array>;
+  const energy = {} as Record<Band, Float32Array>;
+  for (const band of BAND_NAMES) {
+    flux[band] = new Float32Array(frames);
+    energy[band] = new Float32Array(frames);
+  }
+  const hatRing = new Float32Array(frames);
+  const percShare = new Float32Array(frames);
+  const midFrom = Math.round((BANDS.body[0] * FRAME) / sampleRate);
+  const midTo = Math.round((BANDS.noise[1] * FRAME) / sampleRate);
+  const low: Float32Array[] = new Array(frames);
+
+  const R = (HPSS_TIME - 1) / 2;
+  const hpssFrom = Math.ceil((HPSS_MIN_HZ * FRAME) / sampleRate);
+  const ring: Float32Array[] = Array.from({ length: HPSS_TIME }, () => new Float32Array(half));
+  const column = new Float32Array(HPSS_TIME);
+  const window = new Float32Array(HPSS_FREQ);
+  const perc = new Float32Array(half);
+  // 대역에 들지 않는 주파수(4.5~7kHz 등)는 분리할 필요가 없다
+  const used = new Uint8Array(half);
+  for (const band of BAND_NAMES) for (const k of bins[band]) used[k] = 1;
+  for (let k = midFrom; k <= midTo; k++) used[k] = 1;
+  const prevLog = new Float32Array(half);
+  const logMag = (v: number) => Math.log1p(100 * v);
+
+  // 프레임 f를 계산해 넣으면, R프레임 앞(c = f - R)의 시간 방향 이웃이 모두 모여 c를 처리할 수 있다
+  for (let f = 0; f < frames + R; f++) {
+    const slot = ring[f % HPSS_TIME];
+    if (f < frames) {
+      const o = f * HOP;
+      for (let i = 0; i < FRAME; i++) {
+        re[i] = (x[o + i] ?? 0) * win[i];
+        im[i] = 0;
+      }
+      fft(re, im);
+      for (let k = 0; k < half; k++) slot[k] = Math.hypot(re[k], im[k]);
+    } else {
+      slot.fill(0);
     }
-    fft(re, im);
-    const mag = new Float32Array(FRAME / 2);
-    for (let k = 0; k < FRAME / 2; k++) mag[k] = Math.hypot(re[k], im[k]);
-    out.push(mag);
-    if (f % 2000 === 1999) {
-      onProgress?.(f / frames);
+    const c = f - R;
+    if (c < 0) continue;
+    const mag = ring[c % HPSS_TIME];
+
+    for (let k = 0; k < hpssFrom; k++) perc[k] = mag[k];
+    for (let k = hpssFrom; k < half; k++) {
+      if (!used[k]) continue;
+      for (let j = 0; j < HPSS_TIME; j++) column[j] = c - R + j < 0 ? 0 : ring[(c - R + j) % HPSS_TIME][k];
+      const harmonic = median(column);
+      for (let j = 0; j < HPSS_FREQ; j++) window[j] = mag[k - (HPSS_FREQ >> 1) + j] ?? 0;
+      const percussive = median(window);
+      const p2 = percussive * percussive;
+      perc[k] = (mag[k] * p2) / (p2 + harmonic * harmonic + 1e-20);
+    }
+
+    for (const band of BAND_NAMES) {
+      let fsum = 0;
+      let esum = 0;
+      for (const k of bins[band]) {
+        const l = logMag(perc[k]);
+        const d = l - prevLog[k];
+        if (d > 0 && c > 0) fsum += d;
+        esum += perc[k] * perc[k];
+      }
+      flux[band][c] = fsum / bins[band].length;
+      energy[band][c] = esum;
+    }
+    for (let k = 0; k < half; k++) prevLog[k] = logMag(perc[k]);
+    let ring2 = 0;
+    for (const k of bins.hat) ring2 += mag[k] * mag[k];
+    hatRing[c] = ring2;
+    let pm = 0;
+    let am = 0;
+    for (let k = midFrom; k <= midTo; k++) {
+      pm += perc[k] * perc[k];
+      am += mag[k] * mag[k];
+    }
+    percShare[c] = am > 0 ? pm / am : 0;
+    low[c] = mag.slice(0, LOW_BINS);
+
+    if (c % 1500 === 1499) {
+      onProgress?.(c / frames);
       await new Promise((r) => setTimeout(r, 0));
     }
   }
   onProgress?.(1);
-  return out;
+  return { frames, flux, energy, hatRing, percShare, low };
+}
+
+/** 작은 배열의 중앙값 (삽입 정렬, 제자리) */
+/** 중앙값 (배열 순서를 바꾼다). 퀵셀렉트: 가운데 하나만 제자리에 놓는다 */
+function median(a: Float32Array): number {
+  const k = a.length >> 1;
+  let lo = 0;
+  let hi = a.length - 1;
+  while (lo < hi) {
+    const pivot = a[(lo + hi) >> 1];
+    let i = lo;
+    let j = hi;
+    while (i <= j) {
+      while (a[i] < pivot) i++;
+      while (a[j] > pivot) j--;
+      if (i <= j) {
+        const t = a[i];
+        a[i] = a[j];
+        a[j] = t;
+        i++;
+        j--;
+      }
+    }
+    if (k <= j) hi = j;
+    else if (k >= i) lo = i;
+    else break;
+  }
+  return a[k];
 }
 
 function bandBins(ranges: [number, number][], sampleRate: number): number[] {
@@ -342,31 +488,6 @@ function bandBins(ranges: [number, number][], sampleRate: number): number[] {
     for (let k = Math.ceil((lo * FRAME) / sampleRate); k <= Math.floor((hi * FRAME) / sampleRate) && k < FRAME / 2; k++) bins.push(k);
   }
   return bins;
-}
-
-/** 스펙트럼 플럭스: 로그 크기가 늘어난 만큼만 더한다 (줄어드는 것은 무시) */
-function bandFlux(spec: Float32Array[], bins: number[]): Float32Array {
-  const out = new Float32Array(spec.length);
-  const log = (v: number) => Math.log1p(100 * v);
-  for (let t = 1; t < spec.length; t++) {
-    let sum = 0;
-    for (const k of bins) {
-      const d = log(spec[t][k]) - log(spec[t - 1][k]);
-      if (d > 0) sum += d;
-    }
-    out[t] = sum / bins.length;
-  }
-  return out;
-}
-
-function bandEnergy(spec: Float32Array[], bins: number[]): Float32Array {
-  const out = new Float32Array(spec.length);
-  for (let t = 0; t < spec.length; t++) {
-    let sum = 0;
-    for (const k of bins) sum += spec[t][k] * spec[t][k];
-    out[t] = sum;
-  }
-  return out;
 }
 
 function percentile(f: Float32Array, p: number): number {
