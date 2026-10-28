@@ -23,7 +23,8 @@ async function loadPdfjs(): Promise<typeof import('pdfjs-dist')> {
 /** 악보 프로그램으로 만든 PDF 드럼 악보 → 연주 순서대로 펼친 악보 */
 export async function scoreFromPdf(file: File, onProgress?: (page: number, pages: number) => void): Promise<SheetResult> {
   const pdfjs = await loadPdfjs();
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), verbosity: 0 }).promise;
+  // 그림 악보를 읽으려면 그림 픽셀이 필요하다 (ImageBitmap 대신 원본 데이터로 받는다)
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), verbosity: 0, isOffscreenCanvasSupported: false }).promise;
   try {
     const pages: PageContent[] = [];
     for (let i = 1; i <= doc.numPages; i++) {

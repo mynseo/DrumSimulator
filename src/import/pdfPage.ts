@@ -43,6 +43,7 @@ const OPS = {
   nextLineSetSpacingShowText: 47,
   setLineWidth: 2,
   constructPath: 91,
+  paintImageXObject: 85,
 } as const;
 
 export interface Glyph {
@@ -67,11 +68,25 @@ export interface Segment {
   width: number;
 }
 
+/** 페이지에 그려진 그림(스캔·이미지로 만든 악보). 흑백 밝기 0(검정)~255(흰색) */
+export interface PageImage {
+  gray: Uint8Array;
+  w: number;
+  h: number;
+  /** 그림이 놓인 페이지 좌표 범위 (왼쪽 아래 x0,y0 ~ 오른쪽 위 x1,y1) */
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 export interface PageContent {
   width: number;
   height: number;
   glyphs: Glyph[];
   segments: Segment[];
+  /** 페이지의 절반 이상을 덮는 그림만 (악보를 그림으로 넣은 PDF) */
+  images?: PageImage[];
 }
 
 type Matrix = [number, number, number, number, number, number];
@@ -91,6 +106,7 @@ export interface PdfPageLike {
   view: number[];
   getOperatorList(): Promise<{ fnArray: number[]; argsArray: unknown[] }>;
   commonObjs: { get(name: string): unknown; has?(name: string): boolean };
+  objs?: { get(name: string, callback?: (data: unknown) => void): unknown };
 }
 
 interface GlyphArg {
@@ -135,6 +151,7 @@ export async function readPage(page: PdfPageLike): Promise<PageContent> {
   let tm: Matrix = IDENTITY;
   let tlm: Matrix = IDENTITY;
   let path: { pts: [number, number][]; closed: boolean }[] = [];
+  const imageOps: { id: string; ctm: Matrix }[] = [];
 
   const fontName = (id: string) => {
     try {
@@ -286,10 +303,43 @@ export async function readPage(page: PdfPageLike): Promise<PageContent> {
       case OPS.endPath:
         path = [];
         break;
+      case OPS.paintImageXObject:
+        imageOps.push({ id: args[0], ctm: st.ctm });
+        break;
     }
   }
   const [x0, y0, x1, y1] = page.view;
-  return { width: x1 - x0, height: y1 - y0, glyphs, segments };
+  const width = x1 - x0;
+  const height = y1 - y0;
+  const images: PageImage[] = [];
+  for (const { id, ctm } of imageOps) {
+    // 그림은 단위 정사각형을 ctm으로 옮긴 자리에 그려진다
+    const [ax, ay] = apply(ctm, 0, 0);
+    const [bx, by] = apply(ctm, 1, 1);
+    const box = { x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) };
+    if ((box.x1 - box.x0) * (box.y1 - box.y0) < width * height * 0.5 || !page.objs) continue;
+    const data = await new Promise<unknown>((resolve) => page.objs!.get(id, resolve));
+    const gray = toGray(data);
+    if (gray) images.push({ ...gray, ...box });
+  }
+  return { width, height, glyphs, segments, ...(images.length ? { images } : {}) };
+}
+
+/** pdf.js 그림 데이터 → 흑백 밝기 배열 */
+function toGray(img: unknown): { gray: Uint8Array; w: number; h: number } | null {
+  const o = img as { width?: number; height?: number; kind?: number; data?: Uint8Array | Uint8ClampedArray };
+  if (!o?.data || !o.width || !o.height) return null;
+  const { width: w, height: h, data, kind } = o;
+  const gray = new Uint8Array(w * h);
+  if (kind === 1) {
+    // 1비트: 한 줄씩 바이트로 묶여 있다 (1 = 흰색)
+    const rowBytes = (w + 7) >> 3;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) gray[y * w + x] = (data[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1 ? 255 : 0;
+  } else {
+    const ch = kind === 3 ? 4 : 3;
+    for (let i = 0; i < w * h; i++) gray[i] = (data[i * ch] * 3 + data[i * ch + 1] * 6 + data[i * ch + 2]) / 10;
+  }
+  return { gray, w, h };
 }
 
 function addPath(path: { pts: [number, number][]; closed: boolean }[], ops: number[], args: number[]) {

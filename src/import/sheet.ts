@@ -1,6 +1,7 @@
 import { VELOCITY } from '../core/instruments';
 import { chooseSubdivision } from '../core/grid';
 import type { Hand, Instrument, Score, ScoreNote } from '../core/types';
+import { recognizeImage } from './omr';
 import type { Glyph, PageContent, Segment } from './pdfPage';
 
 /**
@@ -49,6 +50,8 @@ type Sym =
   | { t: 'repeatDot' }
   | { t: 'graceSlash'; tremolo?: number }
   | { t: 'tremolo'; n: number }
+  | { t: 'paren' }
+  | { t: 'measureRepeat' }
   | { t: 'tuplet'; n: number };
 
 /** Finale Maestro 계열 (MacRoman 자리 → 유니코드, 매핑이 없으면 U+F0xx) */
@@ -127,6 +130,9 @@ const SMUFL: Record<string, Sym> = {
   '\ue048': { t: 'coda' },
   '\ue044': { t: 'repeatDot' },
   '\ue564': { t: 'graceSlash' },
+  '\ue0f5': { t: 'paren' },
+  '\ue0f6': { t: 'paren' },
+  '\ue500': { t: 'measureRepeat' },
   '\ue220': { t: 'tremolo', n: 1 },
   '\ue221': { t: 'tremolo', n: 2 },
   '\ue222': { t: 'tremolo', n: 3 },
@@ -290,6 +296,8 @@ interface Chord {
   tremolo?: number;
   /** 악보에 적힌 스티킹 글자 */
   hand?: Hand;
+  /** 괄호로 감싼 고스트 노트 */
+  ghost?: boolean;
 }
 interface RestEv {
   x: number;
@@ -319,6 +327,8 @@ export interface ReadMeasure {
   approximate: boolean;
   /** 실제 길이(박). 못갖춘마디면 박자표보다 짧다 */
   length: number;
+  /** 한 마디 반복 기호(%): 바로 앞 마디를 그대로 친다 */
+  repeatPrev?: boolean;
   marks: MeasureMarks;
 }
 
@@ -403,7 +413,8 @@ function readStaff(
     .map(({ g, sym }) => ({ x: g.x, w: g.width || s * 1.2, y: g.y, pos: posOf(st, g.y), kind: (sym as { kind: HeadKind }).kind, size: g.size }));
 
   // 기둥: 머리에 붙은 가는 세로선
-  const stems = verticals.filter((v) => v.w < 1.2 && v.hi - v.lo > 1.4 * s && !barSegs.includes(v));
+  // 기둥 두께: 벡터 PDF는 1pt 안팎, 그림 악보는 번진 회색까지 쳐서 조금 두껍다
+  const stems = verticals.filter((v) => v.w < Math.max(1.2, 0.45 * s) && v.hi - v.lo > 1.4 * s && !barSegs.includes(v));
   const beams = segs
     .filter((g) => g.width >= 0.25 * s && g.width < 1.2 * s && Math.abs(g.x2 - g.x1) > 0.5 * s && Math.abs(g.y2 - g.y1) <= 0.7 * Math.abs(g.x2 - g.x1))
     .map((g) => (g.x1 <= g.x2 ? g : { ...g, x1: g.x2, y1: g.y2, x2: g.x1, y2: g.y1 }));
@@ -468,6 +479,7 @@ function readStaff(
   const accents = glyphs.filter((x) => x.sym.t === 'accent');
   const opens = glyphs.filter((x) => x.sym.t === 'open');
   const closes = glyphs.filter((x) => x.sym.t === 'closed');
+  const parens = glyphs.filter((x) => x.sym.t === 'paren');
 
   // 꾸밈음(플램 등): 기둥에 빗금이 있거나 머리가 작다. 박자에 들지 않으니 뺀다
   const slashes = glyphs.filter((x) => x.sym.t === 'graceSlash');
@@ -539,7 +551,9 @@ function readStaff(
     const open = opens.some(({ g }) => above(g));
     const closed = closes.some(({ g }) => above(g));
     void key;
-    chords.push({ heads: hs, x, voice, beats, stemX, accent, open, closed, ...(tremolo ? { tremolo } : {}) });
+    // 머리 왼쪽 바로 옆에 괄호가 있으면 고스트 노트
+    const ghost = parens.some(({ g }) => hs.some((hd) => g.x < hd.x && hd.x - g.x < 1.4 * s && Math.abs(g.y - hd.y) < 0.8 * s));
+    chords.push({ heads: hs, x, voice, beats, stemX, accent, open, closed, ...(tremolo ? { tremolo } : {}), ...(ghost ? { ghost } : {}) });
   }
 
   // 스티킹 글자(R·L): 음표 바로 위나 아래, 가로로 가장 가까운 손 화음에 붙인다 (글자 하나는 한 번만)
@@ -664,7 +678,8 @@ function readStaff(
     const inM = (x: number) => x >= e.x0 && x < e.x1;
     const cs = chords.filter((c) => inM(c.x));
     const rs = rests.filter((r) => inM(r.x));
-    if (!cs.length && !rs.length) return; // 음자리표·조표만 있는 머리 부분
+    const simile = glyphs.some(({ g, sym }) => sym.t === 'measureRepeat' && g.x >= e.x0 && g.x < e.x1);
+    if (!cs.length && !rs.length && !simile) return; // 음자리표·조표만 있는 머리 부분
     const restVoice = assignRests(cs, rs, s, st.bottom + 2 * s, beatsPerBar, (c) => c.beats * (tupletScale.get(c) ?? 1), (r) => r.beats * (tupletScale.get(r) ?? 1));
     const notes: ReadMeasure['notes'] = [];
     // "ride"·"H.H" 글씨로 하이햇 자리의 X 음표를 라이드로 바꾼다: 글씨보다 오른쪽 음표부터
@@ -729,7 +744,7 @@ function readStaff(
       }
     }
     function addChord(c: Chord, beat: number) {
-      const velocity = c.accent ? VELOCITY.accent : VELOCITY.normal;
+      const velocity = c.accent ? VELOCITY.accent : c.ghost ? VELOCITY.ghost : VELOCITY.normal;
       const added: ReadMeasure['notes'] = [];
       // 트레몰로는 음 길이 동안 같은 음을 촘촘히 친다
       const count = c.tremolo ? Math.max(1, Math.round(c.beats / c.tremolo)) : 1;
@@ -755,7 +770,7 @@ function readStaff(
     }
     if (switches.length) cymbalMode.ride = switches[switches.length - 1].ride;
     notes.sort((a, b) => a.beat - b.beat);
-    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat } });
+    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat }, ...(simile && !cs.length ? { repeatPrev: true } : {}) });
   });
   return out;
 }
@@ -944,7 +959,15 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   let lastLabels: (Label | null)[] | null = null;
   let anyMusic = false;
 
-  pages.forEach((page, pi) => {
+  let scanned = false;
+  pages.forEach((original, pi) => {
+    // 글자·선 없이 그림만 있는 페이지(스캔·이미지 악보)는 그림에서 기호와 선을 찾아 같은 모양으로 바꾼다
+    let page = original;
+    if (!original.glyphs.some((g) => symbolOf(g)) && original.images?.length) {
+      const found = original.images.map((img) => recognizeImage(img));
+      page = { ...original, glyphs: [...original.glyphs, ...found.flatMap((f) => f.glyphs)], segments: [...original.segments, ...found.flatMap((f) => f.segments)] };
+      if (found.some((f) => f.glyphs.length)) scanned = true;
+    }
     const staves = findStaves(page.segments, pi);
     const texts = textRuns(page.glyphs);
     const letters = stickLetters(page.glyphs);
@@ -1043,6 +1066,9 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       const startIdx = slots.length;
       main.forEach((m, k) => {
         const variants = read.map((r) => r.find((x) => Math.abs(x.x0 - m.x0) < 3 * s0 && Math.abs(x.x1 - m.x1) < 3 * s0) ?? null).filter((x): x is ReadMeasure => !!x);
+        // 한 마디 반복(%)은 바로 앞에 적힌 마디의 음을 그대로 쓴다
+        const prev = slots[slots.length - 1];
+        for (const v of variants) if (v.repeatPrev && prev) v.notes = prev.variants[0].notes.map((n) => ({ ...n }));
         slots.push({ variants, labels: labels.slice(0, variants.length), marks: { ...m.marks } });
         void k;
       });
@@ -1097,7 +1123,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   });
 
   if (!slots.length) {
-    throw new Error(anyMusic || pages.some((p) => p.glyphs.length) ? '드럼 악보 줄을 찾지 못했어요' : '글자가 없는 PDF예요. 스캔한 악보는 아직 읽을 수 없어요');
+    throw new Error(anyMusic || pages.some((p) => p.glyphs.length) ? '드럼 악보 줄을 찾지 못했어요' : '악보를 찾지 못했어요 (오선이 또렷한 악보만 읽을 수 있어요)');
   }
 
   // 1번 괄호는 다음 도돌이표(:||)까지 이어진다. 괄호 선이 다음 줄로 그려지지 않는 악보가 많다.
@@ -1141,7 +1167,8 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   }
   if (!notes.length) throw new Error('드럼 음표를 찾지 못했어요');
   const uniq = new Set(order.map((o) => o.slot)).size;
-  if (approximated) warnings.push(`${approximated}마디는 쉼표가 생략돼 음 위치로 박을 맞췄어요`);
+  if (scanned) warnings.push('그림 악보를 읽었어요: 틀린 곳이 있을 수 있고 빠르기는 직접 맞춰 주세요');
+  if (approximated) warnings.push(scanned ? `${approximated}마디는 박자가 안 맞아 음 위치로 어림했어요` : `${approximated}마디는 쉼표가 생략돼 음 위치로 박을 맞췄어요`);
 
   return {
     score: {

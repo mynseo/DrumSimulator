@@ -284,7 +284,7 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(snares.map((n) => [n.step / r.score.stepsPerBeat, !!n.flam])).toEqual([[1, true], [3, false]]);
   });
 
-  it('글자가 없는 PDF(스캔한 악보)는 알려 준다', () => {
-    expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/스캔/);
+  it('악보가 없는 PDF는 알려 준다', () => {
+    expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/악보를 찾지 못했어요/);
   });
 });
