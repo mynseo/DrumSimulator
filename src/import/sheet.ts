@@ -28,9 +28,12 @@ export interface SheetResult {
 /** 펼친 악보의 최대 길이 */
 const MAX_BARS = 256;
 
+/** 진단용: 길이가 안 맞는 성부 등을 알려 준다 (테스트·개발 중에만 연결) */
+export const sheetDebug: { log?: (msg: string) => void } = {};
+
 // ---------- 글꼴별 기호 ----------
 
-type HeadKind = 'black' | 'x' | 'half' | 'whole' | 'circleX';
+type HeadKind = 'black' | 'x' | 'half' | 'whole' | 'circleX' | 'slash';
 type Sym =
   | { t: 'head'; kind: HeadKind }
   | { t: 'rest'; beats: number; measure?: boolean }
@@ -93,6 +96,9 @@ const SMUFL: Record<string, Sym> = {
   '\ue0a8': { t: 'head', kind: 'x' },
   '\ue0a7': { t: 'head', kind: 'x' },
   '\ue0b3': { t: 'head', kind: 'circleX' },
+  '\ue0f9': { t: 'head', kind: 'x' },
+  '\ue100': { t: 'head', kind: 'slash' },
+  '\ue101': { t: 'head', kind: 'slash' },
   '\ue0b7': { t: 'head', kind: 'x' },
   '\ue4e3': { t: 'rest', beats: 4, measure: true },
   '\ue4e4': { t: 'rest', beats: 2 },
@@ -215,6 +221,8 @@ interface Text {
   y: number;
   x1: number;
   size: number;
+  /** 이 오선이 가장 가까운 오선인가 (두 오선 사이의 글씨는 양쪽에 다 넘기고 이 표시로 가린다) */
+  own?: boolean;
 }
 
 /** 일반 글자를 줄 단위 문자열로 묶는다 */
@@ -302,7 +310,7 @@ interface StaffItems {
   segs: Segment[];
 }
 
-function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode: { ride: boolean }, texts: Text[], pieceStart: boolean): ReadMeasure[] {
+function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode: { ride: boolean }, texts: Text[], pieceStart: boolean, pageSegs: Segment[]): ReadMeasure[] {
   const s = st.s;
   const { glyphs, segs } = items;
 
@@ -365,8 +373,11 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
 
   type StemRef = { stem: (typeof stems)[number]; up: boolean };
   const stemOf = new Map<Head, StemRef>();
-  const onStem = (h: Head, v: (typeof stems)[number], up: boolean) =>
-    up ? h.y >= v.lo - 0.7 * s && h.y <= v.hi - 1.2 * s : h.y <= v.hi + 0.7 * s && h.y >= v.lo + 1.2 * s;
+  // 빗금 머리는 키가 커서 기둥이 머리 모서리에서 시작한다
+  const onStem = (h: Head, v: (typeof stems)[number], up: boolean) => {
+    const tol = (h.kind === 'slash' ? 1.4 : 0.7) * s;
+    return up ? h.y >= v.lo - tol && h.y <= v.hi - 1.2 * s : h.y <= v.hi + tol && h.y >= v.lo + 1.2 * s;
+  };
   for (const h of heads) {
     let best: StemRef | null = null;
     let bestD = Infinity;
@@ -458,7 +469,8 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
       for (let i = 0; i < ys.length; i++) if (i === 0 || ys[i] - ys[i - 1] > 0.3 * s) n++;
       let flagged = 0;
       for (const f of flags) {
-        if (f.g.x >= v.x - 0.6 && f.g.x <= v.x + 2.5 * s && Math.abs(f.g.y - far) < 3.5 * s) flagged = Math.max(flagged, (f.sym as { n: number }).n);
+        // 꼬리 글자는 기둥 끝에서 시작한다 (옆 음표의 꼬리를 가져오지 않게 가로는 좁게)
+        if (Math.abs(f.g.x - v.x) < 0.25 * s + 0.6 && Math.abs(f.g.y - far) < 3.5 * s) flagged = Math.max(flagged, (f.sym as { n: number }).n);
       }
       if (flagged && !n && slashed(v)) {
         graces.push(hs);
@@ -500,14 +512,18 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
     });
 
   // 잇단음표 숫자: 오선 근처의 작은 3·5·6
-  const tuplets: { x: number; y: number; n: number }[] = [];
-  for (const { g, sym } of glyphs) if (sym.t === 'tuplet') tuplets.push({ x: g.x + g.width / 2, y: g.y, n: (sym as { n: number }).n });
+  const tuplets: { x: number; y: number; n: number; x0: number; x1: number; size: number; own: boolean }[] = [];
+  for (const { g, sym } of glyphs) {
+    if (sym.t === 'tuplet') tuplets.push({ x: g.x + g.width / 2, y: g.y, n: (sym as { n: number }).n, x0: g.x, x1: g.x + g.width, size: g.size, own: true });
+  }
   for (const t of texts) {
-    if (/^[356]$/.test(t.str.trim()) && t.size < 2.5 * s && t.y < st.top + 7 * s && t.y > st.bottom - 6 * s && t.x > st.x0 + 3 * s) {
-      tuplets.push({ x: (t.x + t.x1) / 2, y: t.y, n: Number(t.str.trim()) });
+    // 쪽 번호·마디 번호와 헷갈리지 않게: 작은 글씨이고 오선 가로 범위 안에 있어야 한다
+    if (/^[356]$/.test(t.str.trim()) && t.size < 2.1 * s && t.y < st.top + 7 * s && t.y > st.bottom - 6 * s && t.x > st.x0 + 3 * s && t.x1 < st.x1) {
+      tuplets.push({ x: (t.x + t.x1) / 2, y: t.y, n: Number(t.str.trim()), x0: t.x, x1: t.x1, size: t.size, own: t.own !== false });
     }
   }
   const tupletScale = new Map<Chord | RestEv, number>();
+  const restsAll = rests;
   for (const t of tuplets) {
     const ratio = t.n === 3 ? 2 / 3 : t.n === 6 ? 4 / 6 : t.n === 5 ? 4 / 5 : 1;
     const voice: 1 | 2 = t.y > (st.top + st.bottom) / 2 ? 1 : 2;
@@ -517,9 +533,62 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
       .map((b) => ({ b, d: Math.abs((b.y1 + b.y2) / 2 - t.y) }))
       .filter((x) => x.d < 3.5 * s)
       .sort((a, b) => a.d - b.d)[0]?.b;
+    // 숫자 양옆의 가는 가로선 = 잇단 괄호. 괄호가 덮는 범위의 음표·쉼표가 모두 잇단이다
+    const midY = t.y + t.size * 0.35;
+    // 괄호 선은 두 오선 사이에 있어 다른 오선 몫으로 나뉘었을 수 있으니 페이지 전체에서 찾는다
+    const flat = pageSegs.filter((g) => g.width < 1.2 && Math.abs(g.y1 - g.y2) < 0.5 * s + 0.2 * Math.abs(g.x2 - g.x1) && Math.abs(g.x2 - g.x1) > 0.8 * s);
+    const near = (g: Segment) => Math.abs((g.y1 + g.y2) / 2 - midY) < 0.9 * s;
+    const left = flat.filter((g) => near(g) && Math.max(g.x1, g.x2) <= t.x0 + 1 && Math.max(g.x1, g.x2) > t.x0 - 2 * s)[0];
+    const right = flat.filter((g) => near(g) && Math.min(g.x1, g.x2) >= t.x1 - 1 && Math.min(g.x1, g.x2) < t.x1 + 2 * s)[0];
+    const above = voice === 1;
+    const sideRest = (r: RestEv) => (above ? r.y >= (st.top + st.bottom) / 2 - s : r.y <= (st.top + st.bottom) / 2 + s);
+    // 괄호 끝의 꺾쇠는 음표 쪽을 향한다. 이 오선 반대쪽을 향하면 이웃 오선의 잇단이다
+    if (left && right) {
+      const ends = [Math.min(left.x1, left.x2), Math.max(right.x1, right.x2)];
+      const hooks = pageSegs.filter(VERTICAL).map((g) => ({ x: (g.x1 + g.x2) / 2, lo: Math.min(g.y1, g.y2), hi: Math.max(g.y1, g.y2) })).filter((v) => v.hi - v.lo < 2.5 * s && ends.some((x) => Math.abs(v.x - x) < 0.6) && (Math.abs(v.hi - midY) < 0.8 * s || Math.abs(v.lo - midY) < 0.8 * s));
+      const pointsDown = hooks.some((v) => Math.abs(v.hi - midY) < 0.8 * s && v.lo < midY - 0.3 * s);
+      const pointsUp = hooks.some((v) => Math.abs(v.lo - midY) < 0.8 * s && v.hi > midY + 0.3 * s);
+      const staffIsBelow = midY > (st.top + st.bottom) / 2;
+      if ((staffIsBelow && pointsUp && !pointsDown) || (!staffIsBelow && pointsDown && !pointsUp)) continue;
+    }
+    const center = (m: Chord | RestEv) => ('heads' in m ? m.x + m.heads[0].w / 2 : m.x + 0.5 * s);
+    // 후보 중에서 잇단이 되는 연속 구간: 길이 합이 n × (4분·8분·16분·32분)이고 숫자를 덮는 가장 긴 구간
+    const pick = (cands: (Chord | RestEv)[]) => {
+      const items = cands.sort((a, b) => a.x - b.x);
+      let best: (Chord | RestEv)[] | null = null;
+      let bestScore = -Infinity;
+      for (let i = 0; i < items.length; i++) {
+        let sum = 0;
+        for (let j = i; j < items.length; j++) {
+          sum += items[j].beats;
+          const unit = sum / t.n;
+          if (![1, 0.5, 0.25, 0.125, 0.0625].some((u) => Math.abs(unit - u) < 1e-6)) continue;
+          const covers = center(items[i]) - s <= t.x && t.x <= center(items[j]) + s;
+          const score = (covers ? 1000 : 0) + (j - i) * 10 - Math.abs((center(items[i]) + center(items[j])) / 2 - t.x) / s;
+          if (score > bestScore) {
+            bestScore = score;
+            best = items.slice(i, j + 1);
+          }
+        }
+      }
+      return best ?? items;
+    };
     let members: (Chord | RestEv)[];
-    if (beam) {
-      members = chords.filter((c) => c.voice === voice && c.stemX >= beam.x1 - 0.5 && c.stemX <= beam.x2 + 0.5);
+    if (left && right) {
+      const x0 = Math.min(left.x1, left.x2) - 0.5 * s;
+      const x1 = Math.max(right.x1, right.x2) + 0.5 * s;
+      members = pick([
+        ...chords.filter((c) => c.voice === voice && center(c) >= x0 && center(c) <= x1),
+        ...restsAll.filter((r) => center(r) >= x0 && center(r) <= x1 && sideRest(r)),
+      ]);
+    } else if (beam && t.own) {
+      members = pick([
+        ...chords.filter((c) => c.voice === voice && c.stemX >= beam.x1 - 0.5 && c.stemX <= beam.x2 + 0.5),
+        // 빔 아래 끼어 있는 쉼표도 잇단에 든다
+        ...restsAll.filter((r) => r.x > beam.x1 && r.x < beam.x2 && sideRest(r)),
+      ]);
+    } else if (!t.own) {
+      continue; // 괄호도 빔도 없으면 가까운 오선의 숫자만 믿는다
     } else {
       members = chords
         .filter((c) => c.voice === voice)
@@ -540,7 +609,7 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
     const notes: ReadMeasure['notes'] = [];
     // "ride"·"H.H" 글씨로 하이햇 자리의 X 음표를 라이드로 바꾼다: 글씨보다 오른쪽 음표부터
     const switches = texts
-      .filter((t) => t.x >= e.x0 - s && t.x < e.x1 && t.y >= st.top && t.y <= st.top + 8 * s)
+      .filter((t) => t.own !== false && t.x >= e.x0 - s && t.x < e.x1 && t.y >= st.top && t.y <= st.top + 8 * s)
       .map((t) => ({ x: t.x, ride: /\bride\b|\bR\.\s?C\b/i.test(t.str) ? true : /H\.?\s?H|hi-?hat/i.test(t.str) ? false : null }))
       .filter((t): t is { x: number; ride: boolean } => t.ride !== null)
       .sort((a, b) => a.x - b.x);
@@ -562,6 +631,9 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
       ].sort((a, b) => a.x - b.x);
       if (!evs.some((x) => x.chord)) continue;
       const total = evs.reduce((sum, x) => sum + x.beats, 0);
+      if (sheetDebug.log) {
+        sheetDebug.log(`p${st.page + 1} y${Math.round(st.top)} x${Math.round(e.x0)} v${v} total=${+total.toFixed(3)} ${evs.map((x) => `${Math.round(x.x)}:${x.chord ? x.chord.heads.map((h) => h.kind[0] + h.pos).join('+') : 'r'}=${+x.beats.toFixed(3)}`).join(' ')}`);
+      }
       let start = 0;
       if (Math.abs(total - beatsPerBar) > 1e-6) {
         // 곡의 첫 마디가 짧으면 못갖춘마디: 끝에 붙인다. 그 밖에는 위치로 어림 (쉼표를 숨긴 악보도 많다)
@@ -755,6 +827,8 @@ function posOfInstrument(c: Chord, instrument: Instrument): number {
 /** 오선 위치·머리 모양 → 악기 (드럼 악보에서 가장 흔한 표기) */
 function instrumentAt(h: Head, open: boolean): Instrument {
   const p = h.pos;
+  // 빗금 머리(리듬 슬래시)는 높이와 상관없이 스네어로 친다
+  if (h.kind === 'slash') return 'snare';
   if (h.kind === 'x' || h.kind === 'circleX') {
     if (p <= -1) return 'hihatPedal';
     if (p >= 10) return 'crash';
@@ -882,7 +956,8 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       const group = sys.filter((st) => drums.includes(st));
       if (!group.length) continue;
       const pieceStart = slots.length === 0;
-      const read = group.map((st) => readStaff(st, items.get(st)!, beatsPerBar, cymbalMode, texts, pieceStart));
+      // 글씨(잇단 숫자·ride 표시)는 가장 가까운 오선의 것으로만 본다
+      const read = group.map((st) => readStaff(st, items.get(st)!, beatsPerBar, cymbalMode, texts.map((t) => ({ ...t, own: nearest((t.x + t.x1) / 2, t.y) === st })), pieceStart, page.segments));
       const main = read[0];
       if (!main.length) continue;
       // 줄 이름표 <2x>, <D.S time>
@@ -982,7 +1057,10 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
     if (m.approximate) approximated++;
     for (const n of m.notes) placed.push({ ...n, beat: bar * beatsPerBar + n.beat });
   });
-  const stepsPerBeat = chooseSubdivision(placed.map((n) => ({ beat: n.beat })));
+  // 악보는 박이 정확하니 모든 음이 칸에 딱 맞는 가장 단순한 박 나눔을 고른다
+  // (16분음표만으로 저장하면 필인의 32분음표·6잇단이 반올림돼 겹치거나 사라진다)
+  const exact = [4, 3, 8, 6, 12, 16, 24, 48].find((g) => placed.every((n) => Math.abs(n.beat * g - Math.round(n.beat * g)) < 1e-6));
+  const stepsPerBeat = exact ?? chooseSubdivision(placed.map((n) => ({ beat: n.beat })));
   const notes: ScoreNote[] = [];
   const seen = new Set<string>();
   for (const n of placed) {

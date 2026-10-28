@@ -216,6 +216,30 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(at(r.score, 'snare')).toEqual([3, 5, 7]);
   });
 
+  it('6잇단 괄호 안의 음표와 쉼표를 모두 2/3 길이로 읽고, 모든 음이 들어가는 박 나눔을 고른다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(560);
+    const xOf = (beat: number) => 40 + 8 + (beat * (520 - 16)) / 4;
+    // 1박: 스네어 6잇단 16분 (S r S r S S), 2박 4분쉼표, 3~4박 2분쉼표
+    const slots: Ev[] = [0, 2, 4, 5].map((k) => ({ beat: k / 6, len: 0.25, heads: [SNARE] }));
+    st.voice(40, 560, 'up', [...slots, { beat: 1 / 6, len: 0.25 }, { beat: 3 / 6, len: 0.25 }, { beat: 1, len: 1 }, { beat: 2, len: 2 }]);
+    st.voice(40, 560, 'down', [kick(0), kick(1), kick(2), kick(3)]);
+    // 괄호: 숫자 6 양옆 가로선, 양 끝은 음표 쪽(아래)으로 꺾인다
+    const y = st.top + 6.5 * S;
+    const mid = xOf(0.4);
+    b.text('6', mid - 2, y - 3, 8);
+    b.line(xOf(0) - 2, y, mid - 4, y);
+    b.line(mid + 6, y, xOf(5 / 6) + 8, y);
+    b.line(xOf(0) - 2, y, xOf(0) - 2, y - 4);
+    b.line(xOf(5 / 6) + 8, y, xOf(5 / 6) + 8, y - 4);
+    const r = readSheet([b.page()]);
+    expect(r.approximated).toBe(0);
+    expect(r.score.stepsPerBeat).toBe(6);
+    expect(at(r.score, 'snare').map((x) => +x.toFixed(4))).toEqual([0, 1 / 3, 2 / 3, 5 / 6].map((x) => +x.toFixed(4)));
+    expect(at(r.score, 'kick')).toEqual([0, 1, 2, 3]);
+  });
+
   it('작은 꾸밈음이 앞에 붙은 음은 플램으로 읽는다', () => {
     const b = new PageBuilder();
     const st = new Staff(b, 700);
