@@ -383,9 +383,14 @@ function readStaff(
   // 마디줄: 이 오선(또는 이 오선을 포함한 여러 오선)을 위아래로 꿰뚫는 세로선
   const bars: Barline[] = [];
   const verticals = segs.filter((g) => VERTICAL(g)).map((g) => ({ x: (g.x1 + g.x2) / 2, lo: Math.min(g.y1, g.y2), hi: Math.max(g.y1, g.y2), w: g.width }));
+  // 끝에 음표 머리가 붙은 세로선은 기둥이다 (빔에서 맨 아랫줄 머리까지 오선을 꿰뚫는 긴 기둥)
+  const headGlyphs = glyphs.filter((x) => x.sym.t === 'head').map(({ g }) => g);
+  const headAtEnd = (v: { x: number; lo: number; hi: number }) =>
+    headGlyphs.some((g) => v.x >= g.x - 0.3 * s && v.x <= g.x + g.width + 0.3 * s && (Math.abs(g.y - v.lo) < 0.7 * s || Math.abs(g.y - v.hi) < 0.7 * s));
   const barSegs = verticals
     .filter((v) => v.lo <= st.bottom + 0.3 * s && v.hi >= st.top - 0.3 * s && v.x > st.x0 + 1 && v.x <= st.x1 + 1)
     .filter((v) => Math.abs(v.hi - st.top) < 0.3 * s || Math.abs(v.lo - st.bottom) < 0.3 * s || v.hi - v.lo > (st.top - st.bottom) * 2.5)
+    .filter((v) => !(Math.abs(v.hi - st.top) < 0.3 * s && Math.abs(v.lo - st.bottom) < 0.3 * s) ? !headAtEnd(v) : true)
     .sort((a, b) => a.x - b.x);
   for (const v of barSegs) {
     const last = bars[bars.length - 1];
@@ -462,6 +467,19 @@ function readStaff(
       }
     }
     if (best) stemOf.set(h, best);
+  }
+  // 위·아래 기둥이 모두 붙은 머리는 두 성부가 함께 치는 음이다 (손·발 성부 각각에 하나씩)
+  for (const h of [...heads]) {
+    const ref = stemOf.get(h);
+    if (!ref || h.kind !== 'black' || h.pos < 0 || h.pos > 8) continue;
+    // 다른 기둥도 이 머리에서 끝나야 한다 (옆 음표의 기둥이 지나가는 것은 아니다)
+    const other = stems.find((v) =>
+      v !== ref.stem && (ref.up ? Math.abs(v.x - h.x) < 0.45 * s && Math.abs(v.hi - h.y) < 0.7 * s && v.lo < h.y - 1.2 * s : Math.abs(v.x - (h.x + h.w)) < 0.45 * s && Math.abs(v.lo - h.y) < 0.7 * s && v.hi > h.y + 1.2 * s),
+    );
+    if (!other) continue;
+    const twin = { ...h };
+    heads.push(twin);
+    stemOf.set(twin, { stem: other, up: !ref.up });
   }
   // 2도 화음: 한 머리가 기둥 반대편으로 비켜 앉는다. 이미 붙은 머리와 한 칸 차이면 같은 화음
   for (const h of heads) {
@@ -695,7 +713,7 @@ function readStaff(
       ]);
     } else if (beam && t.own) {
       members = pick([
-        ...chords.filter((c) => c.voice === voice && c.stemX >= beam.x1 - 0.5 && c.stemX <= beam.x2 + 0.5),
+        ...chords.filter((c) => c.voice === voice && c.stemX >= beam.x1 - 0.4 * s && c.stemX <= beam.x2 + 0.4 * s),
         // 빔 아래 끼어 있는 쉼표도 잇단에 든다
         ...restsAll.filter((r) => r.x > beam.x1 && r.x < beam.x2 && sideRest(r)),
       ]);

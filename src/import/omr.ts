@@ -204,20 +204,7 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
   }
   for (const v of lineVerts) {
     const x = PX((v.x0 + v.x1 + 1) / 2);
-    let y0 = v.y0;
-    let y1 = v.y1 + 1;
-    // 오선을 꿰뚫지만 한쪽 끝만 오선 끝줄에 닿는 기둥(빔에서 맨 아랫줄 머리까지)은 마디줄로 보이지 않게 끝을 조금 민다
-    for (const st of staves) {
-      if (y0 > st.top + 0.4 * s || y1 < st.bottom - 0.4 * s) continue;
-      const topEnd = Math.abs(y0 - st.top) < 0.4 * s;
-      const bottomEnd = Math.abs(y1 - st.bottom) < 0.4 * s;
-      const otherStaff = staves.some((o) => o !== st && y0 <= o.bottom && y1 >= o.top);
-      if (topEnd !== bottomEnd && !otherStaff && thin.includes(v)) {
-        if (topEnd && st.top - y0 < 0.4 * s && y1 - st.bottom > 1.5 * s) y0 = st.top - 0.45 * s;
-        if (bottomEnd && y1 - st.bottom < 0.4 * s && st.top - y0 > 1.5 * s) y1 = st.bottom + 0.45 * s;
-      }
-    }
-    out.segments.push({ x1: x, y1: PY(y0), x2: x, y2: PY(y1), width: (v.x1 - v.x0 + 1) * kx });
+    out.segments.push({ x1: x, y1: PY(v.y0), x2: x, y2: PY(v.y1 + 1), width: (v.x1 - v.x0 + 1) * kx });
   }
 
   const staveOf = (y: number) => {
@@ -426,7 +413,8 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     const H = hOf(b);
     const W = (b.x1 - b.x0 + 1) / s;
     const { st, d } = staveOf((b.y0 + b.y1) / 2);
-    if (d < 0.5 * s || d > 4 * s || H < 0.9 || H > 2 || W < 0.45 || W > 1.4 || cxOf(b) < st.x0 + 3.2 * s) continue;
+    // (쪽 번호는 오선 오른쪽 끝 바깥에 있다)
+    if (d < 0.5 * s || d > 6 * s || H < 0.9 || H > 2 || W < 0.45 || W > 1.4 || cxOf(b) < st.x0 + 3.2 * s || cxOf(b) > st.x1 - 1.5 * s) continue;
     if (thin.some((v) => v.x1 >= b.x0 - 2 && v.x0 <= b.x1 + 2 && v.y0 <= b.y1 && v.y1 >= b.y0)) continue;
     const n = digitOf(b);
     if (n !== '3' && n !== '5' && n !== '6') continue;
@@ -618,7 +606,7 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
       }
       case 'beam':
         for (const seg of beamSegments(b, s, w, label, blobs.indexOf(b))) {
-          out.segments.push({ x1: PX(seg.x1), y1: PY(seg.y1), x2: PX(seg.x2), y2: PY(seg.y2), width: seg.t * ky });
+          out.segments.push({ x1: PX(seg.x1), y1: PY(seg.y1), x2: PX(seg.x2), y2: PY(seg.y2), width: Math.max(seg.t, 0.35 * s) * ky }); // 얇게 잘린 빔 조각이 잇단 괄호 선으로 보이지 않게
         }
         break;
     }
