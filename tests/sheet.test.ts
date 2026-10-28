@@ -299,6 +299,24 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(at(score, 'snare')).toEqual([1, 3, 17, 19]);
   });
 
+  it('곡 중간에 바뀐 박자표를 마디 길이에 반영한다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(300);
+    st.barline(560);
+    rockBar(st, 40, 300);
+    // 둘째 마디는 3/4: 박자표 숫자(SMuFL) 뒤에 4분음표 스네어 셋
+    b.glyph('\ue083', 304, st.y(6), 'Bravura', 6, 20);
+    b.glyph('\ue084', 304, st.y(2), 'Bravura', 6, 20);
+    for (const x of [330, 405, 480]) {
+      b.glyph('œ', x, st.y(5), 'MaestroPercussion');
+      b.line(x + HEAD, st.y(5), x + HEAD, st.top + 6 * S);
+    }
+    const { score } = readSheet([b.page()]);
+    expect(score.barBeats).toEqual([4, 3]);
+    expect(at(score, 'snare')).toEqual([1, 3, 4, 5, 6]);
+  });
+
   it('악보가 없는 PDF는 알려 준다', () => {
     expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/악보를 찾지 못했어요/);
   });

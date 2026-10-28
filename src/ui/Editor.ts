@@ -1,5 +1,5 @@
 import { INSTRUMENTS, VELOCITY } from '../core/instruments';
-import { stepsPerBar } from '../core/timeline';
+import { barOfStep, barStarts } from '../core/timeline';
 import type { Hand, Instrument, Score, ScoreNote, Timeline } from '../core/types';
 
 const ROW_H = 24;
@@ -29,6 +29,7 @@ export class Editor {
   onSeek?: (step: number) => void;
   private playheadStep = -1;
   private total = 0;
+  private starts: number[] = [0];
   private cellW = 26;
   private labelW = 80;
   private notes = new Map<string, CellState>();
@@ -58,7 +59,8 @@ export class Editor {
 
   render() {
     const { score } = this;
-    this.total = score.bars * stepsPerBar(score);
+    this.starts = barStarts(score);
+    this.total = this.starts[this.starts.length - 1];
     const style = getComputedStyle(this.container);
     const baseW = parseFloat(style.getPropertyValue('--cell-w')) || 26;
     this.labelW = parseFloat(style.getPropertyValue('--label-w')) || 80;
@@ -130,22 +132,23 @@ export class Editor {
     this.drawn = { from: a, to: b };
 
     const { score } = this;
-    const perBar = stepsPerBar(score);
     const spb = score.stepsPerBeat;
     const heads = document.createDocumentFragment();
     const cells = document.createDocumentFragment();
     for (let s = a; s < b; s++) {
       const x = `${s * this.cellW}px`;
-      const beatStart = s % spb === 0;
-      const h = div(`head${s % perBar === 0 ? ' bar' : ''}${beatStart ? ' beat' : ''}${s === this.playheadStep ? ' playhead' : ''}`, '');
+      const { bar, offset } = barOfStep(this.starts, s);
+      const barStart = offset === 0;
+      const beatStart = offset % spb === 0;
+      const h = div(`head${barStart ? ' bar' : ''}${beatStart ? ' beat' : ''}${s === this.playheadStep ? ' playhead' : ''}`, '');
       h.style.left = x;
       h.dataset.s = String(s);
-      if (s % perBar === 0) h.textContent = String(s / perBar + 1);
+      if (barStart) h.textContent = String(bar + 1);
       else if (beatStart) h.textContent = '·';
-      h.title = `${Math.floor(s / perBar) + 1}마디 ${Math.floor((s % perBar) / spb) + 1}박 — 클릭해서 이동`;
+      h.title = `${bar + 1}마디 ${Math.floor(offset / spb) + 1}박 — 클릭해서 이동`;
       heads.appendChild(h);
       INSTRUMENTS.forEach((inst, row) => {
-        const el = div(`cell${s % perBar === 0 ? ' bar' : ''}${beatStart ? ' beat' : ''}${s === this.playheadStep ? ' playhead' : ''}`, '');
+        const el = div(`cell${barStart ? ' bar' : ''}${beatStart ? ' beat' : ''}${s === this.playheadStep ? ' playhead' : ''}`, '');
         el.style.left = x;
         el.style.top = `${row * ROW_H}px`;
         el.dataset.s = String(s);

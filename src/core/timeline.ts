@@ -9,9 +9,39 @@ export function stepsPerBar(score: Score): number {
   return score.beatsPerBar * score.stepsPerBeat;
 }
 
+/** 마디마다 박 수 */
+export function barBeatsOf(score: Score): number[] {
+  return Array.from({ length: score.bars }, (_, i) => score.barBeats?.[i] ?? score.beatsPerBar);
+}
+
+/** 마디 시작 칸들. 마지막 원소는 전체 칸 수 */
+export function barStarts(score: Score): number[] {
+  const out = [0];
+  for (const b of barBeatsOf(score)) out.push(out[out.length - 1] + Math.round(b * score.stepsPerBeat));
+  return out;
+}
+
+export function totalStepsOf(score: Score): number {
+  const starts = barStarts(score);
+  return starts[starts.length - 1];
+}
+
+/** 칸이 속한 마디 번호(0부터)와 그 마디 안의 칸 */
+export function barOfStep(starts: number[], step: number): { bar: number; offset: number } {
+  let lo = 0;
+  let hi = starts.length - 2;
+  while (lo < hi) {
+    const m = (lo + hi + 1) >> 1;
+    if (starts[m] <= step) lo = m;
+    else hi = m - 1;
+  }
+  return { bar: lo, offset: step - starts[lo] };
+}
+
 export function buildTimeline(score: Score): Timeline {
   const stepDuration = 60 / score.bpm / score.stepsPerBeat;
-  const totalSteps = score.bars * stepsPerBar(score);
+  const starts = barStarts(score);
+  const totalSteps = starts[starts.length - 1];
   const notes = score.notes
     .filter((n) => n.step >= 0 && n.step < totalSteps)
     .sort((a, b) => a.step - b.step || INSTRUMENT_ORDER[a.instrument] - INSTRUMENT_ORDER[b.instrument]);
@@ -63,6 +93,7 @@ export function buildTimeline(score: Score): Timeline {
     totalSteps,
     stepsPerBeat: score.stepsPerBeat,
     beatsPerBar: score.beatsPerBar,
+    barStarts: starts,
     hits,
     byLimb,
     byPiece,

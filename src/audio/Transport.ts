@@ -234,7 +234,8 @@ export class Transport {
 
   private schedule() {
     if (!this.ctx || !this.synth) return;
-    const { hits, duration, stepDuration, stepsPerBeat, beatsPerBar } = this.timeline;
+    const { hits, duration, stepDuration, stepsPerBeat, barStarts } = this.timeline;
+    const downbeats = new Set(barStarts);
     const now = this.ctx.currentTime - this.startTime;
     const until = now + LOOKAHEAD;
 
@@ -265,7 +266,7 @@ export class Transport {
         const beats = Math.round(duration / beatLen);
         for (let b = 0; b < beats; b++) {
           const t = b * beatLen + offset;
-          if (t >= from && t < until) this.synth.click(this.startTime + t, b % beatsPerBar === 0);
+          if (t >= from && t < until) this.synth.click(this.startTime + t, downbeats.has(b * stepsPerBeat));
         }
       }
     }

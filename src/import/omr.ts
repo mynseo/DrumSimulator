@@ -1,4 +1,4 @@
-import { DIGIT_TEMPLATES } from './digits';
+import { DIGIT_TEMPLATES, TIME_SIG_TEMPLATES } from './digits';
 import type { Glyph, PageImage, Segment } from './pdfPage';
 
 /**
@@ -194,10 +194,11 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     out.glyphs.push({ font: FONT, char, x: PX(x), y: PY(yCenter), size: 4 * s * ky, width: width * kx });
 
   for (const st of staves) {
-    for (const l of st.lines) {
-      const y = PY((l.y0 + l.y1) / 2);
-      out.segments.push({ x1: PX(l.x0), y1: y, x2: PX(l.x1), y2: y, width: (l.y1 - l.y0 + 1) * ky });
-    }
+    // 픽셀 단위로 조금씩 어긋난 줄 간격·길이를 고르게 맞춰 낸다 (sheet.ts는 고른 다섯 줄을 오선으로 본다)
+    st.lines.forEach((l, k) => {
+      const y = PY(st.top + ((st.bottom - st.top) * k) / 4);
+      out.segments.push({ x1: PX(st.x0), y1: y, x2: PX(st.x1), y2: y, width: (l.y1 - l.y0 + 1) * ky });
+    });
     // 그림 악보는 드럼 악보만 있다고 보고 오선마다 타악기 음자리표를 붙인다
     glyph('', st.x0 + s, (st.top + st.bottom) / 2, s);
   }
@@ -336,6 +337,87 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
       // = 왼쪽의 작은 음표(♩)도 악보의 음이 아니다
       for (const o of blobs) if (o.x1 < b.x0 && b.x0 - o.x1 < 2.5 * s && o.y0 >= top - 2 * s && o.y1 <= bottom) textBlobs.add(o);
     }
+  }
+
+  // 박자표 숫자: 악보 글꼴 숫자로 읽어 SMuFL 박자표 기호로 낸다
+  // 박자표 숫자는 줄과 겹치고 세로획이 기둥처럼 지워져 조각만 남는다. 원래 그림에서 줄과 줄 사이 상자를 통째로 읽는다
+  const barCols = new Set<number>();
+  /** 오선을 꿰뚫는 세로선 가운데 마디줄이 아닌 것 (박자표 숫자의 세로획일 수 있다) */
+  const sigCols: { x: number; st: Stave }[] = [];
+  for (const v of [...thin, ...thick]) {
+    const st = staves.find((o) => v.y0 <= o.top + 1 && v.y1 >= o.bottom - 1);
+    if (!st) continue;
+    // 마디줄 양옆은 비어 있다 (박자표 숫자의 세로획은 옆에 다른 획이 붙어 있다)
+    // (굵은 세로획이 가는 선으로 잡힌 것이면 바로 옆 열도 대부분 검다)
+    let side = 0;
+    let wide = 0;
+    let rows = 0;
+    for (let y = Math.round(st.top); y <= st.bottom; y++) {
+      if (st.lines.some((l) => y >= l.y0 - 1 && y <= l.y1 + 1)) continue;
+      rows++;
+      if (img.gray[y * w + v.x0 - 2] < 150 || img.gray[y * w + v.x1 + 2] < 150) side++;
+      if (img.gray[y * w + v.x0 - 1] < 150 || img.gray[y * w + v.x1 + 1] < 150) wide++;
+    }
+    if (side < rows * 0.2 && wide < rows * 0.5) {
+      if (thin.includes(v)) for (let x = v.x0; x <= v.x1; x++) barCols.add(x);
+    } else if (v.y0 >= st.top - 0.5 * s && v.y1 <= st.bottom + 0.5 * s) sigCols.push({ x: Math.round((v.x0 + v.x1) / 2), st });
+  }
+  const ink = (x: number, y: number) => img.gray[y * w + x] < 150 && !barCols.has(x);
+  /** 오선 반쪽(줄 셋)에서 x 근처의 숫자 하나를 읽는다 */
+  const readHalf = (st: Stave, cx: number, upper: boolean) => {
+    const lineY = st.lines.map((l) => Math.round((l.y0 + l.y1) / 2));
+    const y0 = upper ? lineY[0] : lineY[2];
+    const y1 = upper ? lineY[2] : lineY[4];
+    const onLine = (y: number) => st.lines.some((l) => y >= l.y0 - 1 && y <= l.y1 + 1);
+    const colInk = (x: number) => {
+      for (let y = y0; y <= y1; y++) if (!onLine(y) && ink(x, y)) return true;
+      return false;
+    };
+    // 가운데에서 좌우로 잉크가 있는 열까지 넓힌다. 줄에 붙은 획은 안 보이므로 좁은 틈은 건너뛴다
+    const gap = Math.max(2, Math.round(0.3 * s));
+    const near = (x: number, dir: number) => Array.from({ length: gap }, (_, i) => x + dir * (i + 1)).some(colInk);
+    let x0 = cx;
+    let x1 = cx;
+    while (x0 > cx - 1.5 * s && near(x0, -1)) x0--;
+    while (x1 < cx + 1.5 * s && near(x1, 1)) x1++;
+    if (x1 - x0 < 0.7 * s) return null;
+    // 아래 숫자(음표 단위)는 2·4·8(16의 6)뿐이다
+    const d = readShape({ x0, y0, x1, y1 }, ink, TIME_SIG_TEMPLATES, 500, upper ? '123456789' : '2486');
+    return d ? { d, x0, x1, cy: (y0 + y1) / 2 } : null;
+  };
+  // 후보: 위·아래로 겹친 숫자 조각, 마디줄이 아닌 세로획. 위아래 숫자를 모두 읽어야 박자표로 본다
+  const cands = [
+    ...[...timeSig].map((b) => ({ x: Math.round((b.x0 + b.x1) / 2), st: staveOf((b.y0 + b.y1) / 2).st })),
+    ...sigCols,
+  ];
+  const sigsDone: { st: Stave; x0: number; x1: number }[] = [];
+  for (const c of cands) {
+    if (sigsDone.some((o) => o.st === c.st && c.x >= o.x0 - 2 && c.x <= o.x1 + 2)) continue;
+    const up = readHalf(c.st, c.x, true);
+    const down = readHalf(c.st, c.x, false);
+    if (!up || !down) continue;
+    sigsDone.push({ st: c.st, x0: Math.min(up.x0, down.x0), x1: Math.max(up.x1, down.x1) });
+    for (const h of [up, down]) glyph(String.fromCharCode(0xe080 + Number(h.d)), h.x0, h.cy, h.x1 - h.x0 + 1);
+    // 박자표 숫자의 조각은 음표·쉼표로 읽지 않는다
+    const done = sigsDone[sigsDone.length - 1];
+    for (const o of blobs) if (cxOf(o) >= done.x0 - 1 && cxOf(o) <= done.x1 + 1 && o.y0 >= c.st.top - 0.6 * s && o.y1 <= c.st.bottom + 0.6 * s) textBlobs.add(o);
+  }
+
+  // 한 마디 반복(%): 오선 안의 빗금 하나와 그 왼쪽 위·오른쪽 아래의 점 두 개
+  for (const b of blobs) {
+    if (textBlobs.has(b)) continue;
+    const W = (b.x1 - b.x0 + 1) / s;
+    const H = hOf(b);
+    const { st, d } = staveOf((b.y0 + b.y1) / 2);
+    if (d > 0 || W < 1.2 || W > 2.8 || H < 1.2 || H > 2.8 || b.area / ((b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1)) > 0.5) continue;
+    const dot = (o: Blob) => o !== b && (o.x1 - o.x0 + 1) / s <= 0.6 && hOf(o) <= 0.6 && cxOf(o) >= b.x0 - 0.3 * s && cxOf(o) <= b.x1 + 0.3 * s && o.y0 >= b.y0 - 0.3 * s && o.y1 <= b.y1 + 0.3 * s;
+    const midX = cxOf(b);
+    const midY = (b.y0 + b.y1) / 2;
+    const tl = blobs.find((o) => dot(o) && cxOf(o) < midX && (o.y0 + o.y1) / 2 < midY);
+    const br = blobs.find((o) => dot(o) && cxOf(o) > midX && (o.y0 + o.y1) / 2 > midY);
+    if (!tl || !br) continue;
+    glyph('', b.x0, (st.top + st.bottom) / 2, b.x1 - b.x0 + 1);
+    for (const o of [b, tl, br]) textBlobs.add(o);
   }
 
   // 잇단음표 숫자 3·5·6: 오선 밖, 기둥에 붙지 않은 숫자
@@ -567,14 +649,24 @@ function thicknessOk(b: Blob, s: number, w: number, label: Int32Array, id: numbe
   return med >= 0.25 * s && med <= 0.8 * s;
 }
 
-let digitTemplates: { d: string; ar: number; f: number[] }[] | null = null;
+type Template = { d: string; ar: number; f: number[] };
+const parsed = new Map<string[], Template[]>();
+const templatesOf = (src: string[]) => {
+  let t = parsed.get(src);
+  if (!t) parsed.set(src, (t = src.map((r) => ({ d: r[0], ar: Number(r.slice(1, 4)) / 100, f: [...r.slice(4)].map(Number) }))));
+  return t;
+};
 
 /** 덩어리를 가로 5 × 세로 7칸으로 나눈 검은 정도를 숫자 견본과 비교한다. 충분히 닮은 것이 없으면 null */
-function readDigit(b: Blob, w: number, label: Int32Array, id: number): string | null {
+function readDigit(b: Blob, w: number, label: Int32Array, id: number, src = DIGIT_TEMPLATES, limit = 260): string | null {
+  return readShape(b, (x, y) => label[y * w + x] === id, src, limit);
+}
+
+/** 상자 안의 모양(on)을 숫자 견본과 비교한다 */
+function readShape(b: { x0: number; y0: number; x1: number; y1: number }, on: (x: number, y: number) => boolean, src: string[], limit: number, allowed = '0123456789'): string | null {
   const bw = b.x1 - b.x0 + 1;
   const bh = b.y1 - b.y0 + 1;
   if (bh < 8 || bw > bh * 1.2) return null;
-  digitTemplates ??= DIGIT_TEMPLATES.map((t) => ({ d: t[0], ar: Number(t.slice(1, 4)) / 100, f: [...t.slice(4)].map(Number) }));
   const f: number[] = [];
   for (let gy = 0; gy < 7; gy++) {
     for (let gx = 0; gx < 5; gx++) {
@@ -588,7 +680,7 @@ function readDigit(b: Blob, w: number, label: Int32Array, id: number): string | 
         const wy = Math.min(y + 1, y1) - Math.max(y, y0);
         for (let x = Math.floor(x0); x < Math.ceil(x1); x++) {
           const wx = Math.min(x + 1, x1) - Math.max(x, x0);
-          if (label[(b.y0 + y) * w + b.x0 + x] === id) ink += wx * wy;
+          if (on(b.x0 + x, b.y0 + y)) ink += wx * wy;
           area += wx * wy;
         }
       }
@@ -598,7 +690,8 @@ function readDigit(b: Blob, w: number, label: Int32Array, id: number): string | 
   const ar = bw / bh;
   let best = Infinity;
   let digit: string | null = null;
-  for (const t of digitTemplates) {
+  for (const t of templatesOf(src)) {
+    if (!allowed.includes(t.d)) continue;
     let dist = 40 * (ar - t.ar) ** 2;
     for (let i = 0; i < 35; i++) dist += (f[i] - t.f[i]) ** 2;
     if (dist < best) {
@@ -606,7 +699,7 @@ function readDigit(b: Blob, w: number, label: Int32Array, id: number): string | 
       digit = t.d;
     }
   }
-  return best < 260 ? digit : null;
+  return best < limit ? digit : null;
 }
 
 /** 열마다 띠가 하나씩이고 그 가운데 높이가 한쪽으로 고르게 움직이는가 (기운 빔) */

@@ -2,7 +2,7 @@ import './style.css';
 import { customKit, DEFAULT_KIT, findKit, SOUND_KITS } from './audio/AudioEngine';
 import { Transport, type BackingTrack } from './audio/Transport';
 import { cloneScore, PRESETS } from './core/presets';
-import { buildTimeline, stepsPerBar } from './core/timeline';
+import { barOfStep, buildTimeline, totalStepsOf } from './core/timeline';
 import type { Score, Timeline } from './core/types';
 import { CHARACTERS } from './drummer/characters';
 import type { DrummerRig } from './drummer/DrummerRig';
@@ -141,7 +141,9 @@ bpmInput.addEventListener('change', () => {
 });
 barsInput.addEventListener('change', () => {
   score.bars = clampInt(barsInput.value, 1, 256, score.bars);
-  score.notes = score.notes.filter((n) => n.step < score.bars * stepsPerBar(score));
+  // 마디마다 박 수가 있으면 늘어난 마디는 기본 박자로
+  if (score.barBeats) score.barBeats = Array.from({ length: score.bars }, (_, i) => score.barBeats?.[i] ?? score.beatsPerBar);
+  score.notes = score.notes.filter((n) => n.step < totalStepsOf(score));
   scoreChanged({ rerender: true });
 });
 spbSelect.addEventListener('change', () => {
@@ -393,8 +395,8 @@ function frame(now: number) {
 
   const step = Math.min(timeline.totalSteps - 1, Math.floor(t / timeline.stepDuration + 1e-6));
   editor.setPlayhead(transport.playing || t > 0 ? step : -1);
-  const perBar = stepsPerBar(score);
-  positionEl.textContent = `${Math.floor(step / perBar) + 1}마디 ${Math.floor((step % perBar) / score.stepsPerBeat) + 1}박`;
+  const { bar, offset } = barOfStep(timeline.barStarts, Math.max(0, step));
+  positionEl.textContent = `${bar + 1}마디 ${Math.floor(offset / score.stepsPerBeat) + 1}박`;
 
   stage.render(dt);
   requestAnimationFrame(frame);
@@ -422,7 +424,8 @@ function validateScore(s: Score): Score {
   if (!s || !Array.isArray(s.notes) || !(s.bpm > 0) || !(s.bars > 0) || !(s.stepsPerBeat > 0)) {
     throw new Error('올바른 악보 파일이 아닙니다');
   }
-  return { version: 1, title: s.title ?? '악보', bpm: s.bpm, beatsPerBar: s.beatsPerBar ?? 4, stepsPerBeat: s.stepsPerBeat, bars: s.bars, notes: s.notes };
+  const barBeats = Array.isArray(s.barBeats) && s.barBeats.length === s.bars && s.barBeats.every((b) => b > 0 && b * s.stepsPerBeat === Math.round(b * s.stepsPerBeat)) ? s.barBeats : undefined;
+  return { version: 1, title: s.title ?? '악보', bpm: s.bpm, beatsPerBar: s.beatsPerBar ?? 4, stepsPerBeat: s.stepsPerBeat, bars: s.bars, notes: s.notes, ...(barBeats ? { barBeats } : {}) };
 }
 
 function clampInt(v: string, min: number, max: number, fallback: number) {

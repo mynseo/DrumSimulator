@@ -52,7 +52,8 @@ type Sym =
   | { t: 'tremolo'; n: number }
   | { t: 'paren' }
   | { t: 'measureRepeat' }
-  | { t: 'tuplet'; n: number };
+  | { t: 'tuplet'; n: number }
+  | { t: 'timeDigit'; d: number };
 
 /** Finale Maestro 계열 (MacRoman 자리 → 유니코드, 매핑이 없으면 U+F0xx) */
 const MAESTRO: Record<string, Sym> = {
@@ -140,6 +141,16 @@ const SMUFL: Record<string, Sym> = {
   '\ue223': { t: 'tremolo', n: 4 },
   '\ue22a': { t: 'tremolo', n: 3 }, // 버즈 롤: 32분음표로 촘촘히
   '\ue565': { t: 'graceSlash' },
+  '\ue080': { t: 'timeDigit', d: 0 },
+  '\ue081': { t: 'timeDigit', d: 1 },
+  '\ue082': { t: 'timeDigit', d: 2 },
+  '\ue083': { t: 'timeDigit', d: 3 },
+  '\ue084': { t: 'timeDigit', d: 4 },
+  '\ue085': { t: 'timeDigit', d: 5 },
+  '\ue086': { t: 'timeDigit', d: 6 },
+  '\ue087': { t: 'timeDigit', d: 7 },
+  '\ue088': { t: 'timeDigit', d: 8 },
+  '\ue089': { t: 'timeDigit', d: 9 },
   '\ue883': { t: 'tuplet', n: 3 },
   '\ue885': { t: 'tuplet', n: 5 },
   '\ue886': { t: 'tuplet', n: 6 },
@@ -330,6 +341,8 @@ export interface ReadMeasure {
   approximate: boolean;
   /** 실제 길이(박). 못갖춘마디면 박자표보다 짧다 */
   length: number;
+  /** 이 마디의 박자표 박 수 (4분음표 기준. 3/4 = 3, 6/8 = 3) */
+  meter: number;
   /** 한 마디 반복 기호(%): 바로 앞 마디를 그대로 친다 */
   repeatPrev?: boolean;
   /** 여러 마디 쉼표: 이만큼의 빈 마디 */
@@ -357,7 +370,7 @@ interface StaffItems {
 function readStaff(
   st: Staff,
   items: StaffItems,
-  beatsPerBar: number,
+  meter: { beats: number },
   cymbalMode: { ride: boolean },
   texts: Text[],
   pieceStart: boolean,
@@ -697,6 +710,29 @@ function readStaff(
     for (const m of members) tupletScale.set(m, ratio);
   }
 
+  // 박자표: 오선 위·아래 절반에 겹쳐 놓인 숫자. 박 수 = 위 숫자 × 4 / 아래 숫자
+  const mid = (st.top + st.bottom) / 2;
+  const sigDigits = [
+    // SMuFL 박자표 숫자는 글자 가운데가 기준선이다
+    ...glyphs.filter((x) => x.sym.t === 'timeDigit').map(({ g, sym }) => ({ x: g.x, x1: g.x + g.width, y: g.y, d: (sym as { d: number }).d })),
+    ...texts
+      .filter((t) => t.own !== false && /^\d{1,2}$/.test(t.str.trim()) && t.size >= 1.5 * s)
+      .map((t) => ({ x: t.x, x1: t.x1, y: t.y + t.size * 0.35, d: Number(t.str.trim()) })),
+  ].filter((g) => g.y > st.bottom - 0.3 * s && g.y < st.top + 0.3 * s);
+  const sigs: { x: number; beats: number }[] = [];
+  for (const up of sigDigits.filter((g) => g.y > mid)) {
+    const cx = (up.x + up.x1) / 2;
+    const down = sigDigits.find((g) => g.y < mid && Math.abs((g.x + g.x1) / 2 - cx) < 1.5 * s);
+    if (!down || sigs.some((o) => Math.abs(o.x - up.x) < 2 * s)) continue;
+    // 두 자리 숫자(12/8): 바로 옆의 위 숫자와 붙인다
+    const pair = sigDigits.filter((g) => g.y > mid && Math.abs(g.x - up.x) < 2 * s).sort((a, b) => a.x - b.x);
+    const num = Number(pair.map((g) => g.d).join(''));
+    const den = down.d;
+    const beats = (num * 4) / den;
+    if ([2, 4, 8, 16].includes(den) && beats >= 1 && beats <= 12) sigs.push({ x: Math.min(...pair.map((g) => g.x)), beats });
+  }
+  sigs.sort((a, b) => a.x - b.x);
+
   // 마디마다 성부별로 박 위치 계산
   const out: ReadMeasure[] = [];
   edges.forEach((e) => {
@@ -704,6 +740,10 @@ function readStaff(
     const cs = chords.filter((c) => inM(c.x));
     const rs = rests.filter((r) => inM(r.x));
     const simile = glyphs.some(({ g, sym }) => sym.t === 'measureRepeat' && g.x >= e.x0 && g.x < e.x1);
+    // 마디 첫 음보다 앞에 있는 박자표부터 이 마디에 적용된다
+    const firstX = Math.min(e.x1, ...cs.map((c) => c.x), ...rs.map((r) => r.x));
+    while (sigs.length && sigs[0].x < firstX) meter.beats = sigs.shift()!.beats;
+    const beatsPerBar = meter.beats;
     if (!cs.length && !rs.length && !simile) return; // 음자리표·조표만 있는 머리 부분
     const restVoice = assignRests(cs, rs, s, st.bottom + 2 * s, beatsPerBar, (c) => c.beats * (tupletScale.get(c) ?? 1), (r) => r.beats * (tupletScale.get(r) ?? 1));
     const notes: ReadMeasure['notes'] = [];
@@ -801,8 +841,10 @@ function readStaff(
       if (num) restBars = Number(num.str.trim());
     }
     notes.sort((a, b) => a.beat - b.beat);
-    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat }, ...(simile && !cs.length ? { repeatPrev: true } : {}), ...(restBars > 1 ? { restBars } : {}) });
+    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, meter: beatsPerBar, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat }, ...(simile && !cs.length ? { repeatPrev: true } : {}), ...(restBars > 1 ? { restBars } : {}) });
   });
+  // 줄 끝의 미리 알림 박자표는 다음 줄 첫 마디부터
+  for (const sg of sigs) meter.beats = sg.beats;
   return out;
 }
 
@@ -894,7 +936,7 @@ export function placeByPosition(
     const c = pts[i];
     return c.beat > a.beat ? a.x + ((c.x - a.x) * (b - a.beat)) / (c.beat - a.beat) : c.x;
   };
-  const n = beatsPerBar * grid;
+  const n = Math.round(beatsPerBar * grid);
   const slots = Array.from({ length: n }, (_, k) => k / grid);
   const cost = evs.map((e) => {
     const exact = known.find((p) => Math.abs(p.x - e.x) < same);
@@ -983,6 +1025,8 @@ function parseLabel(str: string): Label | null {
 export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): SheetResult {
   const warnings: string[] = [];
   let beatsPerBar = 4;
+  /** 지금 읽고 있는 곳의 박자 (박자표를 만날 때마다 바뀐다) */
+  let meter: { beats: number } | null = null;
   let bpm = 0;
   let title = '';
   const slots: Slot[] = [];
@@ -1080,7 +1124,12 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       if (!group.length) continue;
       const pieceStart = slots.length === 0;
       // 글씨(잇단 숫자·ride 표시)는 가장 가까운 오선의 것으로만 본다
-      const read = group.map((st) => readStaff(st, items.get(st)!, beatsPerBar, cymbalMode, texts.map((t) => ({ ...t, own: nearest((t.x + t.x1) / 2, t.y) === st })), pieceStart, page.segments, letters.filter((l) => nearest(l.x, l.y, 14) === st)));
+      meter ??= { beats: beatsPerBar };
+      // 한 시스템의 여러 드럼 줄은 같은 박자에서 시작한다. 다음 시스템은 첫 줄을 따른다
+      const start = meter.beats;
+      const meters = group.map(() => ({ beats: start }));
+      const read = group.map((st, i) => readStaff(st, items.get(st)!, meters[i], cymbalMode, texts.map((t) => ({ ...t, own: nearest((t.x + t.x1) / 2, t.y) === st })), pieceStart, page.segments, letters.filter((l) => nearest(l.x, l.y, 14) === st)));
+      meter.beats = meters[0].beats;
       const main = read[0];
       if (!main.length) continue;
       // 줄 이름표 <2x>, <D.S time>
@@ -1187,13 +1236,22 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   // 박 위치 → 칸
   const placed: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand }[] = [];
   let approximated = 0;
-  order.forEach(({ m }, bar) => {
+  const barBeats: number[] = [];
+  let barStart = 0;
+  order.forEach(({ m }) => {
     if (m.approximate) approximated++;
-    for (const n of m.notes) placed.push({ ...n, beat: bar * beatsPerBar + n.beat });
+    for (const n of m.notes) placed.push({ ...n, beat: barStart + n.beat });
+    barBeats.push(m.meter);
+    barStart += m.meter;
   });
+  // 가장 많이 쓰인 박자가 곡의 박자. 다른 마디가 있으면 마디마다 박 수를 남긴다
+  const counts = new Map<number, number>();
+  for (const b of barBeats) counts.set(b, (counts.get(b) ?? 0) + 1);
+  const mainMeter = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? beatsPerBar;
+  const starts = barBeats.map((_, i) => barBeats.slice(0, i).reduce((a, b) => a + b, 0));
   // 악보는 박이 정확하니 모든 음이 칸에 딱 맞는 가장 단순한 박 나눔을 고른다
   // (16분음표만으로 저장하면 필인의 32분음표·6잇단이 반올림돼 겹치거나 사라진다)
-  const exact = [4, 3, 8, 6, 12, 16, 24, 48].find((g) => placed.every((n) => Math.abs(n.beat * g - Math.round(n.beat * g)) < 1e-6));
+  const exact = [4, 3, 8, 6, 12, 16, 24, 48].find((g) => [...placed.map((n) => n.beat), ...starts].every((b) => Math.abs(b * g - Math.round(b * g)) < 1e-6));
   const stepsPerBeat = exact ?? chooseSubdivision(placed.map((n) => ({ beat: n.beat })));
   const notes: ScoreNote[] = [];
   const seen = new Set<string>();
@@ -1214,10 +1272,11 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       version: 1,
       title: title || fallbackTitle,
       bpm: bpm >= 30 && bpm <= 300 ? bpm : 100,
-      beatsPerBar,
+      beatsPerBar: mainMeter,
       stepsPerBeat,
       bars: order.length,
       notes,
+      ...(barBeats.some((b) => b !== mainMeter) ? { barBeats } : {}),
     },
     writtenBars: uniq,
     approximated,
