@@ -442,7 +442,8 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     const y0 = Math.min(...group.map((o) => o.y0));
     const y1 = Math.max(...group.map((o) => o.y1));
     if ((x1 - x0 + 1) / s > 1.2 || (y1 - y0 + 1) / s < 2.2 || (y1 - y0 + 1) / s > 3.3) continue;
-    if (thin.some((v) => v.x1 >= x0 - 0.5 * s && v.x0 <= x1 + 0.5 * s && v.y0 <= y1 && v.y1 >= y0)) continue;
+    // 쉼표 안에 들어 있는 세로획(쉼표의 일부가 기둥처럼 지워진 것)은 괜찮다. 밖으로 뻗은 기둥이 있으면 음표다
+    if (thin.some((v) => v.x1 >= x0 - 0.5 * s && v.x0 <= x1 + 0.5 * s && v.y0 <= y1 && v.y1 >= y0 && (v.y0 < y0 - 0.5 * s || v.y1 > y1 + 0.5 * s))) continue;
     glyph('', x0, (y0 + y1) / 2, x1 - x0 + 1);
     for (const o of group) textBlobs.add(o);
   }
@@ -488,11 +489,15 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     let pieces: { x0: number; x1: number }[] = [];
     if (d > 6 * s || isHeader || timeSig.has(b) || textBlobs.has(b)) kind = 'skip';
     else if (cy < st.top && W >= 0.6 && H <= 1.6 && topBridge(b)) kind = 'beam';
+    // 두 기둥 사이의 얇고 짧은 토막(32분음표의 셋째 빔 등). 머리는 이보다 키가 크고 더 꽉 차 있다
+    else if (cy < st.top && W >= 0.8 && W <= 2.2 && (H <= 0.6 || (H <= 0.8 && density < 0.8)) && bridges(b)) kind = 'beam';
     else if (d < 2 * s && H >= 0.75 && H <= 1.4 && W >= 1.9 && W <= 8 && density < 0.6 && (pieces = splitX(b, s, w, label, id)).length) kind = 'xs';
     // 머리보다 납작하고 넓은 오선 밖 조각: 두 겹 빔의 아래 빔 토막
     else if (!inStaff && W >= 1.3 && W <= 2.2 && H < 0.8 && density < 0.75 && thicknessOk(b, s, w, label, id) && bridges(b)) kind = 'beam';
     else if (W <= 0.75 && H <= 0.75 && W >= 0.3 && H >= 0.3 && density >= 0.55 && d < 2 * s && cy < st.bottom && stemFoot(b)) {
       kind = 'smallHead'; // 기둥 끝에 바로 붙은 작은 조각: 기둥에 반쯤 잘린 작은 머리(고스트 노트)
+    } else if (W >= 0.9 && W <= 1.6 && H >= 1.5 && H <= 2.5 && density >= 0.6 && d < s && stemFoot(b)) {
+      kind = 'heads2'; // 한 칸 차이로 위아래에 붙은 머리 둘 (화음)
     } else if (W <= 0.52 && H <= 0.52 && W >= 0.2 && H >= 0.2 && density >= 0.55) {
       kind = 'dot';
     } else if (W >= 0.52 && W <= 0.9 && H >= 0.45 && H <= 0.85 && density >= 0.7 && d < 2 * s) {
@@ -501,11 +506,11 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
       kind = 'beam';
     } else if (!inStaff && density < 0.55 && flagEnd(b) && H >= 0.8 && H <= 4.8 && W >= 0.45 && W <= 1.6) {
       // 오선 밖에서 기둥 끝에 붙은 획은 꼬리 (대각선이라 X 머리처럼 보일 수 있다)
-      kind = H <= 2.4 ? 'flag1' : H <= 3.6 ? 'flag2' : 'flag3';
+      kind = flagKind(b, H, w, label, id);
     } else if (W >= 0.75 && W <= 1.75 && H >= 0.6 && H <= 1.55 && (density >= 0.62 || ring(b, w, label, id) > 0.75 || diagonals(b, w, label, id) > 0.7) && !(W >= 1.1 && H <= 0.8 && density >= 0.75)) {
       // 음표 머리: 꽉 찬 타원 / 테두리 원(⊗) / X. 기둥 조각이 붙어 조금 길어질 수 있다
       if (ring(b, w, label, id) > 0.75 && W >= 0.95 && H >= 0.85 * W && density < 0.58) kind = 'circleX';
-      else if (density >= 0.62) kind = 'head';
+      else if (density >= 0.62 || (inStaff && solidRows(b, w, label, id) >= 0.6)) kind = 'head'; // 덧줄이 지나가는 X는 줄마다 꽉 차 보여서 오선 안에서만
       else kind = 'x';
     } else if (W > 1.4 && W <= 2.4 && H >= 0.7 && H <= 1.4 && diagonals(b, w, label, id) > 0.6 && density < 0.6) {
       kind = 'x'; // 덧줄이 붙은 X (크래시)
@@ -532,7 +537,7 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
       kind = 'open';
     } else if (flagEnd(b) && H >= 1.2 && H <= 4.8 && W >= 0.45 && W <= 1.6) {
       // 기둥 끝에 붙은 꼬리: 길이로 개수를 센다
-      kind = H <= 2.4 ? 'flag1' : H <= 3.6 ? 'flag2' : 'flag3';
+      kind = flagKind(b, H, w, label, id);
     } else if (H >= 1.3 && H <= 3.4 && W >= 0.55 && W <= 1.5) {
       if (H <= 2.2) kind = 'rest8';
       else kind = lobes(b, w, label, id) >= 2 ? 'rest16' : 'rest4';
@@ -546,6 +551,10 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
 
     const left = b.x0;
     switch (kind) {
+      case 'heads2':
+        glyph('', left, b.y0 + bh / 4, bw);
+        glyph('', left, b.y1 - bh / 4, bw);
+        break;
       case 'head':
         glyph('', left, cy, bw);
         break;
@@ -822,6 +831,44 @@ function hole(b: Blob, w: number, label: Int32Array, id: number): boolean {
 }
 
 /** 왼쪽 가장자리 쪽의 덩어리 수: 16분쉼표는 갈고리가 두 개 */
+/** 꼬리 개수: 높이로 어림한 수와, 가운데 열들을 지나는 획 수 중 작은 쪽 (악보마다 꼬리 길이가 달라 높이만으로는 넘친다) */
+function flagKind(b: Blob, H: number, w: number, label: Int32Array, id: number): string {
+  const byHeight = H <= 2.4 ? 1 : H <= 3.6 ? 2 : 3;
+  const counts: number[] = [];
+  for (let k = 3; k <= 7; k++) {
+    const runs = columnRuns(b, Math.round(b.x0 + ((b.x1 - b.x0) * k) / 10), w, label, id);
+    // 1픽셀 틈은 한 획으로 본다
+    let n = 0;
+    let last = -10;
+    for (const [a, c] of runs) {
+      if (a - last > 2) n++;
+      last = c;
+    }
+    if (n) counts.push(n);
+  }
+  const byStrokes = counts.length ? Math.max(1, median(counts)) : byHeight;
+  return `flag${Math.min(byHeight, byStrokes)}`;
+}
+
+/** 가운데 높이의 줄들 가운데 폭 대부분이 끊김 없이 검은 줄의 비율 (꽉 찬 머리는 높고, X는 가운데 한두 줄만) */
+function solidRows(b: Blob, w: number, label: Int32Array, id: number): number {
+  const bw = b.x1 - b.x0 + 1;
+  const bh = b.y1 - b.y0 + 1;
+  let solid = 0;
+  let rows = 0;
+  for (let y = Math.round(b.y0 + bh * 0.2); y <= b.y1 - bh * 0.2; y++) {
+    rows++;
+    let run = 0;
+    let best = 0;
+    for (let x = b.x0; x <= b.x1; x++) {
+      run = label[y * w + x] === id ? run + 1 : 0;
+      best = Math.max(best, run);
+    }
+    if (best >= 0.6 * bw) solid++;
+  }
+  return rows ? solid / rows : 0;
+}
+
 function lobes(b: Blob, w: number, label: Int32Array, id: number): number {
   const x = Math.round(b.x0 + (b.x1 - b.x0) * 0.25);
   return columnRuns(b, x, w, label, id).length;
