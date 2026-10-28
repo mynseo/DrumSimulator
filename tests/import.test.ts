@@ -24,6 +24,11 @@ B |o---------------|
     expect(s.notes.map((n) => n.step)).toEqual([0, 2, 4, 6, 8, 10, 12, 14]);
   });
 
+  it('스네어 줄의 r은 림샷', () => {
+    const s = parseDrumTab('S |----r-------x---|');
+    expect(s.notes.map((n) => n.instrument)).toEqual(['rimshot', 'snare']);
+  });
+
   it('f는 플램', () => {
     const s = parseDrumTab('S |----f-------x---|\nB |x---------------|');
     const snare = s.notes.filter((n) => n.instrument === 'snare');
@@ -117,5 +122,10 @@ describe('MIDI', () => {
     const { score } = parseMidi(midi([[0, 9, 36, 100], [455, 9, 38, 40], [480, 9, 38, 120], [960, 9, 38, 100]]));
     const snare = score.notes.filter((n) => n.instrument === 'snare');
     expect(snare.map((n) => [n.step, !!n.flam])).toEqual([[4, true], [8, false]]);
+  });
+
+  it('GM 40번(일렉트릭 스네어)은 림샷으로 읽는다', () => {
+    const { score } = parseMidi(midi([[0, 9, 40, 120], [480, 9, 38, 100]]));
+    expect(score.notes.map((n) => n.instrument)).toEqual(['rimshot', 'snare']);
   });
 });

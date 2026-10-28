@@ -16,6 +16,7 @@ const KICK_RELEASE = 0.16;
 
 interface Stroke {
   piece: PieceId;
+  instrument: Instrument;
   time: number;
   velocity: number;
   fromStrike: THREE.Vector3;
@@ -48,7 +49,7 @@ export class LiveMotion {
     this.flashes[piece] = { time: now, limb, velocity };
     if (limb === 'RH' || limb === 'LH') {
       const from = this.shown[limb];
-      this.strokes[limb] = { piece, time: now, velocity, fromStrike: from.strike.clone(), fromLift: from.lift };
+      this.strokes[limb] = { piece, instrument, time: now, velocity, fromStrike: from.strike.clone(), fromLift: from.lift };
     } else if (limb === 'RF') {
       this.kickTime = now;
     } else {
@@ -71,7 +72,7 @@ export class LiveMotion {
       if (!s) continue;
       const out = pose[limb];
       const age = now - s.time;
-      const p = this.kit.strikePoint(s.piece, this.target);
+      const p = this.kit.strikePoint(s.piece, this.target, s.instrument);
       if (age < STRIKE) {
         const u = age / STRIKE;
         out.strike.copy(s.fromStrike).lerp(p, easeOut(u));

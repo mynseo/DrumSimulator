@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PIECES } from '../core/instruments';
 import { previousHit } from '../core/timeline';
-import type { Limb, PieceId, Timeline } from '../core/types';
+import type { Instrument, Limb, PieceId, Timeline } from '../core/types';
 
 /** 어떤 손발로 쳤는지 색으로 보여 준다 */
 export const LIMB_COLORS: Record<Limb, number> = {
@@ -11,6 +11,8 @@ export const LIMB_COLORS: Record<Limb, number> = {
   LF: 0xd77dff,
 };
 const FEEDBACK_TIME = 0.45;
+/** 스네어 헤드 좌표계에서 림샷 때 스틱이 닿는 곳: 드러머 쪽 테 바로 안 (스네어 반지름 0.17) */
+const RIM_POINT = new THREE.Vector3(0.03, 0.014, 0.15);
 
 /** 드럼 의자: 앉는 면의 높이와 앞뒤(Z) 위치 */
 export interface Seat {
@@ -74,8 +76,9 @@ export class DrumKit {
     this.buildThrone();
   }
 
-  /** 각 부품의 타격 지점(월드 좌표) */
-  strikePoint(piece: PieceId, out = new THREE.Vector3()): THREE.Vector3 {
+  /** 각 부품의 타격 지점(월드 좌표). 림샷은 스네어 헤드 가운데가 아니라 드러머 쪽 테를 함께 때린다 */
+  strikePoint(piece: PieceId, out = new THREE.Vector3(), instrument?: Instrument): THREE.Vector3 {
+    if (instrument === 'rimshot') return this.pieces.snare.wobble.localToWorld(out.copy(RIM_POINT));
     return this.pieces[piece].strike.getWorldPosition(out);
   }
 

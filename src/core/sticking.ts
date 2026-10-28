@@ -113,6 +113,59 @@ export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb 
   return result;
 }
 
+/**
+ * 이보다 촘촘한 연속 단타는 한 손씩 번갈아(싱글) 치면 한 손 간격이 MIN_SAME_HAND_GAP보다 짧아진다.
+ * 실제 드러머처럼 한 번 손목을 내릴 때 두 번 튕기는 더블 스트로크(RRLL)로 친다.
+ */
+export const DOUBLE_GAP = MIN_SAME_HAND_GAP / 2;
+
+/**
+ * 빠른 롤을 더블 스트로크로 바꾼다. limbs를 고치고, 더블의 둘째 타(튕겨서 치는 음)인지를 돌려준다.
+ * 손으로 치는 음이 한 칸에 하나씩 DOUBLE_GAP 이하 간격으로 4개 이상 이어진 구간만 바꾸고,
+ * 사용자가 손을 지정했거나 플램이 섞인 구간은 그대로 둔다.
+ */
+export function applyDoubles(notes: ScoreNote[], limbs: (Limb | null)[], stepDuration: number): boolean[] {
+  const second = new Array(notes.length).fill(false);
+  // 칸마다 손으로 치는 음 (한 칸에 손 음이 둘이면 롤이 아니다)
+  const singles: number[] = [];
+  let i = 0;
+  while (i < notes.length) {
+    const step = notes[i].step;
+    const hands: number[] = [];
+    while (i < notes.length && notes[i].step === step) {
+      if (INSTRUMENT_INFO[notes[i].instrument].kind === 'hand') hands.push(i);
+      i++;
+    }
+    if (hands.length === 1) singles.push(hands[0]);
+    else if (hands.length > 1) singles.push(-1); // 구간을 끊는다
+  }
+  let run: number[] = [];
+  const flush = () => {
+    if (run.length >= 4 && run.every((k) => !notes[k].hand && !notes[k].flam)) {
+      // 첫 음의 손으로 시작해 두 번씩 번갈아
+      let hand: Limb = limbs[run[0]] === 'LH' ? 'LH' : 'RH';
+      run.forEach((k, j) => {
+        if (j > 0 && j % 2 === 0) hand = hand === 'RH' ? 'LH' : 'RH';
+        limbs[k] = hand;
+        second[k] = j % 2 === 1;
+      });
+    }
+    run = [];
+  };
+  for (let j = 0; j < singles.length; j++) {
+    const k = singles[j];
+    if (k < 0) {
+      flush();
+      continue;
+    }
+    const prev = run[run.length - 1];
+    if (prev !== undefined && (notes[k].step - notes[prev].step) * stepDuration > DOUBLE_GAP + 1e-9) flush();
+    run.push(k);
+  }
+  flush();
+  return second;
+}
+
 /** 오른손이 이 시간 안에 하이햇·라이드로 돌아가야 하면 "바쁘다"고 본다 */
 const RIGHT_BUSY_WINDOW = 0.2;
 

@@ -11,7 +11,7 @@ import type { Instrument, Score, ScoreNote } from '../core/types';
  *
  * - 한 마디는 '|'로 구분. 16칸이면 16분음표, 8칸이면 8분음표, 12칸이면 셋잇단으로 본다.
  * - 빈 줄로 나뉜 여러 단(시스템)은 이어 붙인다.
- * - x/o = 보통, X/O = 악센트, g 또는 ( = 고스트, f = 플램, 하이햇 줄의 o = 오픈 하이햇.
+ * - x/o = 보통, X/O = 악센트, g 또는 ( = 고스트, f = 플램, 하이햇 줄의 o = 오픈 하이햇, 스네어 줄의 r = 림샷.
  */
 export function parseDrumTab(text: string, title = '드럼 탭 가져오기', bpm = 100): Score {
   const blocks: { instrument: string; measures: string[] }[][] = [];
@@ -72,6 +72,8 @@ function parseCell(label: string, c: string): { instrument: Instrument; velocity
   if (label === 'hihat') {
     return { instrument: c === 'o' || c === 'O' ? 'hihatOpen' : 'hihatClosed', velocity, ...(flam ? { flam } : {}) };
   }
+  // 스네어 줄의 r/R = 림샷
+  if (label === 'snare' && (c === 'r' || c === 'R')) return { instrument: 'rimshot', velocity: VELOCITY.accent };
   return { instrument: label as Instrument, velocity, ...(flam ? { flam } : {}) };
 }
 

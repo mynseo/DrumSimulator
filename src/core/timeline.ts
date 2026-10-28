@@ -1,5 +1,5 @@
 import { INSTRUMENT_INFO, INSTRUMENT_ORDER, PIECES, VELOCITY } from './instruments';
-import { assignSticking } from './sticking';
+import { applyDoubles, assignSticking } from './sticking';
 import { LIMBS, type Hit, type Limb, type PieceId, type Score, type Timeline } from './types';
 
 /** 플램의 꾸밈음이 본 음보다 먼저 나오는 시간(초). 실제 연주에서 20~40ms 정도 */
@@ -17,6 +17,7 @@ export function buildTimeline(score: Score): Timeline {
     .sort((a, b) => a.step - b.step || INSTRUMENT_ORDER[a.instrument] - INSTRUMENT_ORDER[b.instrument]);
 
   const limbs = assignSticking(notes, stepDuration);
+  const rebound = applyDoubles(notes, limbs, stepDuration);
   const duration = totalSteps * stepDuration;
   const hits: Hit[] = notes.map((n, i) => ({
     time: n.step * stepDuration,
@@ -24,8 +25,10 @@ export function buildTimeline(score: Score): Timeline {
     instrument: n.instrument,
     piece: INSTRUMENT_INFO[n.instrument].piece,
     limb: limbs[i],
-    velocity: n.velocity,
+    // 튕겨서 치는 둘째 타는 첫 타보다 조금 약하다
+    velocity: rebound[i] ? n.velocity * 0.85 : n.velocity,
     handForced: !!n.hand,
+    ...(rebound[i] ? { rebound: true } : {}),
   }));
 
   // 플램: 본 음을 치는 손의 반대 손이 조금 먼저 약하게 친다. 그 손이 같은 순간 다른 것을 치고 있으면 못 친다

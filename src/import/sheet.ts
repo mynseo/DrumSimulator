@@ -1,6 +1,6 @@
 import { VELOCITY } from '../core/instruments';
 import { chooseSubdivision } from '../core/grid';
-import type { Instrument, Score, ScoreNote } from '../core/types';
+import type { Hand, Instrument, Score, ScoreNote } from '../core/types';
 import type { Glyph, PageContent, Segment } from './pdfPage';
 
 /**
@@ -47,7 +47,8 @@ type Sym =
   | { t: 'segno' }
   | { t: 'coda' }
   | { t: 'repeatDot' }
-  | { t: 'graceSlash' }
+  | { t: 'graceSlash'; tremolo?: number }
+  | { t: 'tremolo'; n: number }
   | { t: 'tuplet'; n: number };
 
 /** Finale Maestro 계열 (MacRoman 자리 → 유니코드, 매핑이 없으면 U+F0xx) */
@@ -77,7 +78,8 @@ const MAESTRO: Record<string, Sym> = {
   '?': { t: 'clef' },
   '%': { t: 'segno' },
   '\u00d8': { t: 'coda' }, // Ø
-  '@': { t: 'graceSlash' },
+  // 기둥에 그은 빗금 두 줄: 꼬리만 있고 빔이 없는 짧은 기둥이면 꾸밈음 표시, 아니면 트레몰로(16분으로 쪼개 치기)
+  '@': { t: 'graceSlash', tremolo: 2 },
   '\uf0de': { t: 'coda' },
 };
 /** MaestroPercussion: 같은 자리에 타악기 음표 머리 */
@@ -125,6 +127,11 @@ const SMUFL: Record<string, Sym> = {
   '\ue048': { t: 'coda' },
   '\ue044': { t: 'repeatDot' },
   '\ue564': { t: 'graceSlash' },
+  '\ue220': { t: 'tremolo', n: 1 },
+  '\ue221': { t: 'tremolo', n: 2 },
+  '\ue222': { t: 'tremolo', n: 3 },
+  '\ue223': { t: 'tremolo', n: 4 },
+  '\ue22a': { t: 'tremolo', n: 3 }, // 버즈 롤: 32분음표로 촘촘히
   '\ue565': { t: 'graceSlash' },
   '\ue883': { t: 'tuplet', n: 3 },
   '\ue885': { t: 'tuplet', n: 5 },
@@ -215,6 +222,24 @@ interface Barline {
   repeatRight: boolean;
 }
 
+/** 악보에 적힌 스티킹 글자 하나 (글자 가운데 위치) */
+interface StickLetter {
+  x: number;
+  y: number;
+  hand: Hand;
+}
+
+/**
+ * 따로 떨어진 R·L 글자: 단어(ride, Closed H.H 등)의 일부가 아닌 한 글자.
+ * 같은 줄 바로 옆에 다른 글자가 붙어 있으면 단어로 본다 (R L R R처럼 띄어 쓴 스티킹은 사이가 넓다)
+ */
+function stickLetters(glyphs: Glyph[]): StickLetter[] {
+  const letters = glyphs.filter((g) => !isMusicFont(g) && /^[A-Za-z.]$/.test(g.char));
+  return letters
+    .filter((g) => (g.char === 'R' || g.char === 'L') && !letters.some((o) => o !== g && Math.abs(o.y - g.y) < g.size * 0.3 && Math.abs(o.x - g.x) < g.size * 0.75))
+    .map((g) => ({ x: g.x + g.width / 2, y: g.y, hand: g.char as Hand }));
+}
+
 interface Text {
   str: string;
   x: number;
@@ -261,6 +286,10 @@ interface Chord {
   closed: boolean;
   /** 앞에 꾸밈음이 붙은 머리들 = 플램 */
   flam?: Head[];
+  /** 트레몰로: 이 길이 동안 몇 박 간격으로 쪼개 치는지 */
+  tremolo?: number;
+  /** 악보에 적힌 스티킹 글자 */
+  hand?: Hand;
 }
 interface RestEv {
   x: number;
@@ -285,7 +314,7 @@ export interface ReadMeasure {
   x0: number;
   x1: number;
   /** 박 위치 → 악기 */
-  notes: { beat: number; instrument: Instrument; velocity: number; flam?: boolean }[];
+  notes: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand }[];
   /** 박자를 계산하지 못해 위치로 어림했다 */
   approximate: boolean;
   /** 실제 길이(박). 못갖춘마디면 박자표보다 짧다 */
@@ -310,7 +339,16 @@ interface StaffItems {
   segs: Segment[];
 }
 
-function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode: { ride: boolean }, texts: Text[], pieceStart: boolean, pageSegs: Segment[]): ReadMeasure[] {
+function readStaff(
+  st: Staff,
+  items: StaffItems,
+  beatsPerBar: number,
+  cymbalMode: { ride: boolean },
+  texts: Text[],
+  pieceStart: boolean,
+  pageSegs: Segment[],
+  letters: StickLetter[] = [],
+): ReadMeasure[] {
   const s = st.s;
   const { glyphs, segs } = items;
 
@@ -433,6 +471,7 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
 
   // 꾸밈음(플램 등): 기둥에 빗금이 있거나 머리가 작다. 박자에 들지 않으니 뺀다
   const slashes = glyphs.filter((x) => x.sym.t === 'graceSlash');
+  const tremolos = glyphs.filter((x) => x.sym.t === 'tremolo' || (x.sym.t === 'graceSlash' && x.sym.tremolo));
   const headSize = heads.map((h) => h.size).sort((a, b) => a - b)[heads.length >> 1] ?? 0;
   // 빗금만으로는 모른다: 버즈·림샷 표시도 같은 기호다. 꾸밈음은 빔 없이 꼬리가 달린 기둥에 빗금이 그어진다
   const slashed = (v: (typeof stems)[number]) => slashes.some(({ g }) => Math.abs(g.x + g.width / 2 - v.x) < 1.2 * s && g.y >= v.lo - s && g.y <= v.hi + s);
@@ -454,6 +493,7 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
     }
     const kind = hs[0].kind;
     let base = kind === 'whole' ? 4 : kind === 'half' ? 2 : 1;
+    let tremolo: number | undefined;
     const x = Math.min(...hs.map((h) => h.x));
     let stemX = x;
     if (ref) {
@@ -478,6 +518,12 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
       }
       n = Math.max(n, flagged);
       base /= 2 ** n;
+      // 트레몰로 빗금: 빔·꼬리 수에 빗금 수를 더한 음표 값으로 쪼갠다 (4분음표+빗금 2 = 16분음표들)
+      const slashCount = Math.max(
+        0,
+        ...tremolos.filter(({ g }) => Math.abs(g.x + g.width / 2 - v.x) < 1.2 * s && g.y >= v.lo - s && g.y <= v.hi + s).map(({ sym }) => (sym.t === 'tremolo' ? sym.n : sym.t === 'graceSlash' ? sym.tremolo ?? 0 : 0)),
+      );
+      if (slashCount) tremolo = (kind === 'whole' ? 4 : kind === 'half' ? 2 : 1) / 2 ** (n + slashCount);
     } else if (kind !== 'whole' && kind !== 'half') {
       base = 1;
     }
@@ -493,7 +539,21 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
     const open = opens.some(({ g }) => above(g));
     const closed = closes.some(({ g }) => above(g));
     void key;
-    chords.push({ heads: hs, x, voice, beats, stemX, accent, open, closed });
+    chords.push({ heads: hs, x, voice, beats, stemX, accent, open, closed, ...(tremolo ? { tremolo } : {}) });
+  }
+
+  // 스티킹 글자(R·L): 음표 바로 위나 아래, 가로로 가장 가까운 손 화음에 붙인다 (글자 하나는 한 번만)
+  const used = new Set<StickLetter>();
+  for (const c of [...chords].sort((a, b) => a.x - b.x)) {
+    if (!c.heads.some((h) => h.pos >= 3)) continue;
+    const cx = c.x + c.heads[0].w / 2;
+    const best = letters
+      .filter((l) => !used.has(l) && Math.abs(l.x - cx) < 1.1 * s && ((l.y > st.top + s && l.y < st.top + 14 * s) || (l.y < st.bottom - s && l.y > st.bottom - 12 * s)))
+      .sort((a, b) => Math.abs(a.x - cx) - Math.abs(b.x - cx))[0];
+    if (best) {
+      used.add(best);
+      c.hand = best.hand;
+    }
   }
 
   // 꾸밈음 → 오른쪽으로 가장 가까운 화음(4칸 안)이 플램
@@ -671,17 +731,24 @@ function readStaff(st: Staff, items: StaffItems, beatsPerBar: number, cymbalMode
     function addChord(c: Chord, beat: number) {
       const velocity = c.accent ? VELOCITY.accent : VELOCITY.normal;
       const added: ReadMeasure['notes'] = [];
-      for (const h of c.heads) {
-        let instrument = instrumentAt(h, c.open);
-        if (instrument === 'hihatClosed' && !c.closed && rideAt(c.x)) instrument = 'ride';
-        if (notes.some((n) => Math.abs(n.beat - beat) < 1e-6 && n.instrument === instrument)) continue;
-        const note = { beat, instrument, velocity };
-        notes.push(note);
-        added.push(note);
+      // 트레몰로는 음 길이 동안 같은 음을 촘촘히 친다
+      const count = c.tremolo ? Math.max(1, Math.round(c.beats / c.tremolo)) : 1;
+      for (let k = 0; k < count; k++) {
+        const at = beat + k * (c.tremolo ?? 0);
+        for (const h of c.heads) {
+          let instrument = instrumentAt(h, c.open);
+          if (instrument === 'hihatClosed' && !c.closed && rideAt(c.x)) instrument = 'ride';
+          if (notes.some((n) => Math.abs(n.beat - at) < 1e-6 && n.instrument === instrument)) continue;
+          const note: ReadMeasure['notes'][number] = { beat: at, instrument, velocity: k === 0 ? velocity : VELOCITY.normal };
+          notes.push(note);
+          if (k === 0) added.push(note);
+        }
       }
+      const hand = added.filter((n) => n.instrument !== 'kick' && n.instrument !== 'hihatPedal');
+      // 악보의 스티킹 글자: 손으로 치는 음이 하나일 때만 (둘이면 어느 음인지 모른다)
+      if (c.hand && hand.length === 1) hand[0].hand = c.hand;
       if (c.flam) {
         // 꾸밈음과 같은 높이의 머리(같은 북)에 플램. 없으면 손으로 치는 첫 음
-        const hand = added.filter((n) => n.instrument !== 'kick' && n.instrument !== 'hihatPedal');
         const same = hand.filter((n) => c.flam!.some((g) => instrumentAt(g, false) === n.instrument || Math.abs(g.pos - posOfInstrument(c, n.instrument)) <= 1));
         for (const n of same.length ? same : hand.slice(0, 1)) n.flam = true;
       }
@@ -835,7 +902,8 @@ function instrumentAt(h: Head, open: boolean): Instrument {
     if (p === 8) return 'ride';
     // 동그라미 X는 열린 하이햇 (MuseScore 기본 드럼 세트)
     if (p === 9) return open || h.kind === 'circleX' ? 'hihatOpen' : 'hihatClosed';
-    return 'snare'; // 크로스 스틱
+    // 스네어 자리: 동그라미 X = 림샷, X = 크로스 스틱(스네어로 친다)
+    return h.kind === 'circleX' && p >= 4 && p <= 6 ? 'rimshot' : 'snare';
   }
   if (p <= 2) return 'kick';
   if (p <= 4) return 'floorTom';
@@ -879,6 +947,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   pages.forEach((page, pi) => {
     const staves = findStaves(page.segments, pi);
     const texts = textRuns(page.glyphs);
+    const letters = stickLetters(page.glyphs);
     if (pi === 0) {
       const big = texts.filter((t) => t.y > page.height * 0.75 && /\S/.test(t.str)).sort((a, b) => b.size - a.size)[0];
       title = big?.str.trim() ?? '';
@@ -891,7 +960,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
 
     // 각 글리프·선분은 가장 가까운 오선 하나에만 속한다
     const band = (st: Staff, y: number) => (y > st.top ? y - st.top : y < st.bottom ? st.bottom - y : 0);
-    const nearest = (x: number, y: number) => {
+    const nearest = (x: number, y: number, reach = 8) => {
       let best: Staff | null = null;
       let bd = Infinity;
       for (const st of staves) {
@@ -902,7 +971,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
           best = st;
         }
       }
-      return best && bd < 8 * best.s ? best : null;
+      return best && bd < reach * best.s ? best : null;
     };
     const items = new Map<Staff, StaffItems>(staves.map((st) => [st, { glyphs: [], segs: [] }]));
     for (const x of syms) {
@@ -957,7 +1026,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       if (!group.length) continue;
       const pieceStart = slots.length === 0;
       // 글씨(잇단 숫자·ride 표시)는 가장 가까운 오선의 것으로만 본다
-      const read = group.map((st) => readStaff(st, items.get(st)!, beatsPerBar, cymbalMode, texts.map((t) => ({ ...t, own: nearest((t.x + t.x1) / 2, t.y) === st })), pieceStart, page.segments));
+      const read = group.map((st) => readStaff(st, items.get(st)!, beatsPerBar, cymbalMode, texts.map((t) => ({ ...t, own: nearest((t.x + t.x1) / 2, t.y) === st })), pieceStart, page.segments, letters.filter((l) => nearest(l.x, l.y, 14) === st)));
       const main = read[0];
       if (!main.length) continue;
       // 줄 이름표 <2x>, <D.S time>
@@ -1051,7 +1120,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   if (order.length === MAX_BARS) warnings.push(`너무 길어서 앞 ${MAX_BARS}마디만 불러왔어요`);
 
   // 박 위치 → 칸
-  const placed: { beat: number; instrument: Instrument; velocity: number; flam?: boolean }[] = [];
+  const placed: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand }[] = [];
   let approximated = 0;
   order.forEach(({ m }, bar) => {
     if (m.approximate) approximated++;
@@ -1068,7 +1137,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
     const key = `${step}:${n.instrument}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    notes.push({ step, instrument: n.instrument, velocity: n.velocity, ...(n.flam ? { flam: true } : {}) });
+    notes.push({ step, instrument: n.instrument, velocity: n.velocity, ...(n.flam ? { flam: true } : {}), ...(n.hand ? { hand: n.hand } : {}) });
   }
   if (!notes.length) throw new Error('드럼 음표를 찾지 못했어요');
   const uniq = new Set(order.map((o) => o.slot)).size;

@@ -4,7 +4,7 @@ import type { Instrument, Score, ScoreNote } from '../core/types';
 /** General MIDI 드럼 맵 (채널 10) → 시뮬레이터 악기 */
 export const GM_DRUM_MAP: Record<number, Instrument> = {
   35: 'kick', 36: 'kick',
-  37: 'snare', 38: 'snare', 39: 'snare', 40: 'snare',
+  37: 'snare', 38: 'snare', 39: 'snare', 40: 'rimshot',
   41: 'floorTom', 43: 'floorTom',
   42: 'hihatClosed', 44: 'hihatPedal', 46: 'hihatOpen',
   45: 'tom2', 47: 'tom2',

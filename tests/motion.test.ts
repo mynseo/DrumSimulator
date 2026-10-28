@@ -95,6 +95,18 @@ describe('드러머 자세', () => {
     expect(peak(snares[0])).toBeGreaterThan(peak(snares[1]) * 2);
   });
 
+  it('림샷은 스네어 테 쪽을 친다', () => {
+    const kit = new DrumKit();
+    const planner = new MotionPlanner(kit);
+    const tl = buildTimeline({ version: 1, title: 'rim', bpm: 90, beatsPerBar: 4, stepsPerBeat: 4, bars: 1, notes: [{ step: 4, instrument: 'rimshot', velocity: 1 }] });
+    const h = tl.hits[0];
+    const pose = planner.compute(tl, h.time, true);
+    const tip = pose[h.limb as 'RH' | 'LH'].tip;
+    const center = kit.strikePoint('snare');
+    expect(tip.distanceTo(kit.strikePoint('snare', new THREE.Vector3(), 'rimshot'))).toBeLessThan(1e-6);
+    expect(tip.distanceTo(center)).toBeGreaterThan(0.08);
+  });
+
   it('직접 연주: 친 직후 스틱이 그 드럼에 닿고, 잠시 뒤 원래 자세로 돌아간다', () => {
     const kit = new DrumKit();
     const planner = new MotionPlanner(kit);

@@ -240,6 +240,36 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(at(r.score, 'kick')).toEqual([0, 1, 2, 3]);
   });
 
+  it('트레몰로 빗금은 음 길이 동안 쪼개 치고, 음표 위의 R·L 글자는 그 손으로 친다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(560);
+    // 1·2박 스네어 4분음표, 3박 스네어 4분음표 + 트레몰로 빗금 두 줄(SMuFL tremolo2) = 16분음표 4개, 4박 쉼
+    st.voice(40, 560, 'up', [...[0, 1, 2].map((x): Ev => ({ beat: x, len: 1, heads: [SNARE] })), { beat: 3, len: 1 }]);
+    st.voice(40, 560, 'down', [kick(0), kick(1), kick(2), kick(3)]);
+    const xOf = (beat: number) => 40 + 8 + (beat * (520 - 16)) / 4;
+    b.glyph('\ue221', xOf(2) + HEAD - 2, st.top + 3 * S, 'Leland', 4);
+    // 스티킹: 1박 L, 2박 R
+    b.text('L', xOf(0) + 1, st.top + 9 * S, 9);
+    b.text('R', xOf(1) + 1, st.top + 9 * S, 9);
+    const r = readSheet([b.page()]);
+    const snares = r.score.notes.filter((n) => n.instrument === 'snare');
+    expect(snares.map((n) => n.step / r.score.stepsPerBeat)).toEqual([0, 1, 2, 2.25, 2.5, 2.75]);
+    expect(snares.slice(0, 3).map((n) => n.hand)).toEqual(['L', 'R', undefined]);
+  });
+
+  it('스네어 자리의 동그라미 X는 림샷', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(560);
+    st.voice(40, 560, 'up', [0, 1, 2, 3].map((x) => ({ beat: x, len: 1, heads: [SNARE] })));
+    // 둘째 박 머리를 동그라미 X로 바꾼다 (MaestroPercussion Ù 자리)
+    const head = b.glyphs.find((g) => g.char === '\u0153' && Math.abs(g.x - (40 + 8 + (1 * 504) / 4)) < 0.5)!;
+    head.char = '\u00d9';
+    const r = readSheet([b.page()]);
+    expect(r.score.notes.map((n) => n.instrument)).toEqual(['snare', 'rimshot', 'snare', 'snare']);
+  });
+
   it('작은 꾸밈음이 앞에 붙은 음은 플램으로 읽는다', () => {
     const b = new PageBuilder();
     const st = new Staff(b, 700);

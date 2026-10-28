@@ -174,11 +174,11 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   grid-template-rows: repeat(3, 1fr);
   grid-template-areas:
     'crash tom1 tom2 crash2 ride'
-    'hihatOpen snare snare floorTom floorTom'
+    'hihatOpen snare rimshot floorTom floorTom'
     'hihatClosed hihatPedal kick kick kick';
 }
 .pad-crash { grid-area: crash; } .pad-crash2 { grid-area: crash2; } .pad-tom1 { grid-area: tom1; } .pad-tom2 { grid-area: tom2; } .pad-ride { grid-area: ride; }
-.pad-hihatOpen { grid-area: hihatOpen; } .pad-snare { grid-area: snare; } .pad-floorTom { grid-area: floorTom; }
+.pad-hihatOpen { grid-area: hihatOpen; } .pad-snare { grid-area: snare; } .pad-rimshot { grid-area: rimshot; } .pad-floorTom { grid-area: floorTom; }
 .pad-hihatClosed { grid-area: hihatClosed; } .pad-hihatPedal { grid-area: hihatPedal; } .pad-kick { grid-area: kick; }
 .pad {
   --hit: var(--rh);

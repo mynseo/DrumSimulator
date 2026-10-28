@@ -62,8 +62,8 @@ export class MotionPlanner {
     const next = nextHit(hits, t, timeline.duration, loop);
     const rest = this.kit.strikePoint(REST_PIECE[limb], this.tmpB);
 
-    const from = prev ? this.kit.strikePoint(prev.hit.piece, this.tmpA).clone() : rest.clone();
-    const to = next ? this.kit.strikePoint(next.hit.piece, new THREE.Vector3()) : from.clone();
+    const from = prev ? this.kit.strikePoint(prev.hit.piece, this.tmpA, prev.hit.instrument).clone() : rest.clone();
+    const to = next ? this.kit.strikePoint(next.hit.piece, new THREE.Vector3(), next.hit.instrument) : from.clone();
     const prevTime = prev ? prev.time : -Infinity;
 
     if (!next) {
@@ -88,7 +88,9 @@ export class MotionPlanner {
     const span = next.time - strokeStart;
     const u = span > 0 ? (t - strokeStart) / span : 1;
     const startLift = strokeStart > prevTime ? HOVER : 0;
-    const peak = Math.max(startLift, clamp(span * 0.55, 0.035, 0.24) * strokeHeight(next.hit.velocity));
+    // 더블의 둘째 타는 손목을 다시 들지 않고 손가락으로 튕긴다: 아주 낮게
+    const rebound = next.hit.rebound ? 0.45 : 1;
+    const peak = Math.max(startLift, clamp(span * 0.55, 0.035, 0.24) * strokeHeight(next.hit.velocity) * rebound);
 
     out.strike.copy(from).lerp(to, smoothstep(0, TRAVEL_END, u));
     // 올라갈 때는 감속, 내려칠 때는 가속(손목 스냅)

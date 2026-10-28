@@ -22,6 +22,7 @@ export const PADS: PadDef[] = [
   { instrument: 'ride', name: '라이드', keys: ['KeyU'] },
   { instrument: 'hihatOpen', name: '하이햇 열림', keys: ['KeyA'] },
   { instrument: 'snare', name: '스네어', keys: ['KeyD', 'KeyJ'] },
+  { instrument: 'rimshot', name: '림샷', keys: ['KeyG', 'KeyH'] },
   { instrument: 'floorTom', name: '플로어 탐', keys: ['KeyF', 'KeyL'] },
   { instrument: 'hihatClosed', name: '하이햇', keys: ['KeyS', 'KeyK'] },
   { instrument: 'hihatPedal', name: '하이햇 페달', keys: ['KeyX'] },

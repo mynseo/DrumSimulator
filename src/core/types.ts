@@ -9,6 +9,7 @@ export type Instrument =
   | 'tom2'
   | 'floorTom'
   | 'snare'
+  | 'rimshot'
   | 'kick'
   | 'hihatPedal';
 
@@ -55,6 +56,8 @@ export interface Hit {
   handForced: boolean;
   /** 플램의 꾸밈음: 본 음보다 조금 먼저 다른 손이 약하게 친 것 */
   grace?: boolean;
+  /** 더블 스트로크의 둘째 타: 손목을 다시 들지 않고 튕겨서 친다 (조금 약하다) */
+  rebound?: boolean;
 }
 
 export interface Timeline {

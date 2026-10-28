@@ -99,4 +99,22 @@ describe('손발 배정', () => {
     // 타임라인은 시간 순서다
     expect(tl.hits.every((h, i) => i === 0 || tl.hits[i - 1].time <= h.time)).toBe(true);
   });
+
+  it('빠른 롤은 더블 스트로크(RRLL), 느린 롤은 싱글(RLRL)', () => {
+    const roll = (bpm: number, spb: number) => {
+      const notes = Array.from({ length: 8 }, (_, i) => n(i, 'snare'));
+      const tl = buildTimeline({ ...score(notes, bpm), stepsPerBeat: spb });
+      return tl.hits.map((h) => (h.limb === 'RH' ? 'R' : 'L') + (h.rebound ? "'" : '')).join('');
+    };
+    // 140 BPM 32분음표: 0.054초 간격 → 더블. 둘째 타(')는 튕겨 친다
+    expect(roll(140, 8)).toBe("RR'LL'RR'LL'");
+    // 100 BPM 16분음표: 0.15초 간격 → 싱글
+    expect(roll(100, 4)).toBe('RLRLRLRL');
+  });
+
+  it('손을 지정한 음이 섞인 롤은 더블로 바꾸지 않는다', () => {
+    const notes = Array.from({ length: 8 }, (_, i) => n(i, 'snare', i === 0 ? 'L' : undefined));
+    const tl = buildTimeline({ ...score(notes, 140), stepsPerBeat: 8 });
+    expect(tl.hits.some((h) => h.rebound)).toBe(false);
+  });
 });

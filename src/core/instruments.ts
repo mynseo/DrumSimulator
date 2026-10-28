@@ -24,6 +24,7 @@ export const INSTRUMENTS: InstrumentInfo[] = [
   { id: 'tom2', label: '미드 탐', piece: 'tom2', kind: 'hand', lateral: 0.17 },
   { id: 'floorTom', label: '플로어 탐', piece: 'floorTom', kind: 'hand', lateral: 0.45 },
   { id: 'snare', label: '스네어', piece: 'snare', kind: 'hand', lateral: -0.22 },
+  { id: 'rimshot', label: '림샷', piece: 'snare', kind: 'hand', lateral: -0.22 },
   { id: 'kick', label: '킥', piece: 'kick', kind: 'RF', lateral: 0.05 },
   { id: 'hihatPedal', label: '하이햇 페달', piece: 'hihat', kind: 'LF', lateral: -0.32 },
 ];

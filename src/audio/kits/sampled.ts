@@ -1,6 +1,6 @@
 import type { Instrument } from '../../core/types';
 import type { Voice } from '../Voice';
-import { level, playBasic } from './synth';
+import { level, playBasic, rimCrack } from './synth';
 import type { SoundKit } from './types';
 
 /** 디코딩된 샘플과, 실제 소리가 시작되는 위치(초) */
@@ -61,6 +61,8 @@ const ACOUSTIC: Record<Instrument, SampledVoice> = {
     ],
     gain: 0.75,
   },
+  // 림샷: 단단한 스네어 녹음에 테 소리를 얹는다 (play 참고)
+  rimshot: { layers: [{ file: 'snare-hard', upTo: 1 }], gain: 0.85 },
   tom1: { layers: [{ file: 'tom-hi-soft', upTo: 0.5 }, { file: 'tom-hi', upTo: 1 }], gain: 0.8 },
   tom2: { layers: [{ file: 'tom-lo-soft', upTo: 0.5 }, { file: 'tom-lo', upTo: 1 }], gain: 0.8, rate: 1.12 },
   floorTom: { layers: [{ file: 'tom-lo-soft', upTo: 0.5 }, { file: 'tom-lo', upTo: 1 }], gain: 0.85, rate: 0.8 },
@@ -120,6 +122,7 @@ export class AcousticKit implements SoundKit {
     if (!s) return playBasic(v, instrument, when, velocity); // 아직 못 불러왔으면 합성 소리로
     const g = sampleLevel(velocity) * def.gain;
     v.sample(s.buffer, when, g, def.rate ?? 1, s.offset);
+    if (instrument === 'rimshot') rimCrack(v, when, g * 0.8);
     if (instrument === 'ride') {
       const bell = this.samples.get(RIDE_BELL);
       if (bell) v.sample(bell.buffer, when, g * 0.25, 1, bell.offset);

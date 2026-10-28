@@ -4,7 +4,23 @@ import type { SoundKit } from './types';
 
 /** 합성 킷: 샘플 없이 오실레이터·노이즈로 만든다. 불러올 것이 없어 항상 준비되어 있다 */
 function synthKit(id: string, name: string, description: string, play: SoundKit['play']): SoundKit {
-  return { id, name, description, ready: () => true, play };
+  return { id, name, description, ready: () => true, play: withRimshot(play) };
+}
+
+/** 림샷: 스틱이 헤드와 테를 함께 때려 나는 '딱' 소리. 킷의 스네어 소리에 금속성 테 소리를 얹는다 */
+export function rimCrack(v: Voice, when: number, g: number) {
+  v.noise(when, 0.05).connect(v.filter('bandpass', 2600, 1.4)).connect(v.env(when, g * 0.55, 0.035, 0.0005));
+  v.osc('triangle', when, 0.08, 920, 860, 0.02).connect(v.env(when, g * 0.3, 0.05, 0.0005));
+  v.noise(when, 0.02).connect(v.filter('highpass', 6000)).connect(v.env(when, g * 0.3, 0.012, 0.0003));
+}
+
+/** 림샷이 따로 없는 킷: 스네어를 조금 세게 + 테 소리 */
+export function withRimshot(play: SoundKit['play']): SoundKit['play'] {
+  return (v, instrument, when, velocity) => {
+    if (instrument !== 'rimshot') return play(v, instrument, when, velocity);
+    play(v, 'snare', when, Math.min(1, velocity * 1.1));
+    rimCrack(v, when, level(velocity));
+  };
 }
 
 /** 오른쪽 크래시(크래시 2)는 왼쪽보다 작은 심벌: 조금 높고 짧게 */
@@ -19,7 +35,9 @@ export const level = (velocity: number) => 0.05 + 0.95 * velocity ** 1.8;
 // ---------------------------------------------------------------------------
 // 기본: 처음부터 쓰던 합성 드럼
 // ---------------------------------------------------------------------------
-export function playBasic(v: Voice, instrument: Instrument, when: number, velocity: number) {
+export const playBasic = withRimshot(playBasicKit);
+
+function playBasicKit(v: Voice, instrument: Instrument, when: number, velocity: number) {
   const g = level(velocity);
   const k = instrument === 'crash2' ? CRASH2_PITCH : 1;
   switch (instrument) {
@@ -214,7 +232,7 @@ function playChip(v: Voice, instrument: Instrument, when: number, velocity: numb
   }
 }
 
-export const BASIC_KIT = synthKit('basic', '기본 합성', '가볍고 단순한 합성 드럼', playBasic);
+export const BASIC_KIT = synthKit('basic', '기본 합성', '가볍고 단순한 합성 드럼', playBasicKit);
 export const KIT_808 = synthKit('808', '808', '길게 울리는 킥 · 힙합, 트랩', play808);
 export const KIT_ELECTRO = synthKit('electro', '일렉트로닉', '펀치감 있는 909 계열 · 하우스, 테크노', playElectro);
 export const KIT_CHIP = synthKit('chip', '8비트', '옛날 게임기 소리', playChip);
