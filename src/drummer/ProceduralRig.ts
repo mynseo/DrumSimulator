@@ -66,7 +66,6 @@ export class ProceduralRig implements DrummerRig {
   private nextBlink = 2;
   /** 록커: 뒤처져 따라오는 머리카락 묶음과 벌린 입 */
   private hair: THREE.Group | null = null;
-  private mouth: THREE.Object3D | null = null;
   private hairSpring = { x: 0.3, z: 0, v: { x: 0, z: 0 } };
   private lastTime = 0;
 
@@ -170,7 +169,7 @@ export class ProceduralRig implements DrummerRig {
     this.upper.updateMatrixWorld(true);
 
     this.aimHead(pose.lookAt, groove * bang, groove * side * 0.12 * (bang - 1));
-    this.animateFace(pose.time, groove);
+    this.animateFace(pose.time);
 
     this.applyArm('RH', pose.RH, this.shoulderR, 1);
     this.applyArm('LH', pose.LH, this.shoulderL, -1);
@@ -190,12 +189,11 @@ export class ProceduralRig implements DrummerRig {
     this.head.rotation.set(this.pitch + groove * 0.12, Math.PI + this.yaw, roll);
   }
 
-  private animateFace(time: number, groove: number) {
+  private animateFace(time: number) {
     // 3~5초마다 눈을 깜빡인다
     if (time > this.nextBlink + 0.14) this.nextBlink = time + 2.5 + Math.random() * 2.5;
     const blinking = time > this.nextBlink;
     for (const e of this.eyes) e.scale.y = blinking ? 0.12 : 1;
-    if (this.mouth) this.mouth.scale.y = 0.8 + groove * 0.9; // 박마다 "예에!" 하고 입을 더 벌린다
     this.swingHair(time);
   }
 
@@ -310,15 +308,6 @@ export class ProceduralRig implements DrummerRig {
     put(ball, [0, HEAD_LIFT - 0.14, -0.1], [0.16, 0.24, 0.09], [-0.15, 0, 0]);
     put(ball, [-0.12, HEAD_LIFT - 0.17, -0.02], [0.06, 0.2, 0.08], [0, 0, 0.25]);
     put(ball, [0.13, HEAD_LIFT - 0.2, -0.03], [0.065, 0.22, 0.08], [0, 0, -0.3]);
-
-    // 소리 지르는 입
-    const mouth = new THREE.Group();
-    mouth.position.set(-0.025, HEAD_LIFT - 0.07, HEAD_R * 0.88);
-    const hole = new THREE.Mesh(this.geo(new THREE.SphereGeometry(1, 16, 12)), this.mat(0x3a0d16, 0.6));
-    hole.scale.set(0.038, 0.032, 0.02);
-    mouth.add(hole);
-    this.head.add(mouth);
-    this.mouth = mouth;
   }
 
   /** 얼굴 앞(+Z)에 점 눈 두 개. 깜빡일 때 세로로 납작해진다 */

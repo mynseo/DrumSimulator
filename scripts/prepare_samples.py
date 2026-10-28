@@ -5,7 +5,7 @@
 
 사용법:
     git clone --depth 1 https://github.com/sgossner/VCSL /tmp/VCSL
-    python3 scripts/prepare_samples.py /tmp/VCSL
+    python3 scripts/prepare_samples.py /tmp/VCSL [이름 …]   (이름을 주면 그 샘플만 다시 만든다)
 
 필요: ffmpeg, numpy
 처리: 모노 변환 → 타격 직전(2ms)부터 자르기 → 길이 제한 + 끝부분 페이드아웃 → 피크 -1dBFS로 정규화 → mp3
@@ -37,7 +37,6 @@ SAMPLES = {
     'hihat-closed': (f'{I}/Hi-Hat Cymbal/HiHat_HitC_v4_rr1_Mid.wav', 0.4),
     'hihat-open': (f'{I}/Hi-Hat Cymbal/HiHat_HitO_rr1_Mid.wav', 1.8),
     'hihat-pedal': (f'{I}/Hi-Hat Cymbal/HiHat_Close_rr1_Mid.wav', 0.3),
-    'crash': (f'{I}/Suspended Cymbal 1/susCymb1_hit_stick_f1.wav', 3.5),
     'ride': (f'{I}/Suspended Cymbal 1/susCymb1_hit_stick_mp1.wav', 2.5),
     'ride-bell': (f'{I}/Suspended Cymbal 1/susCymb1_hit_bell_mf1.wav', 2.0),
 }
@@ -60,10 +59,62 @@ def process(x, max_len):
     return x * (10 ** (-1 / 20) / np.abs(x).max())
 
 
+def shape(x, lo=None, hi=None):
+    """주파수 영역에서 부드럽게 거르기 (lo 아래·hi 위를 줄인다)"""
+    sp = np.fft.rfft(x)
+    f = np.fft.rfftfreq(len(x), 1 / RATE)
+    g = np.ones_like(f)
+    if lo:
+        g *= 1 / np.sqrt(1 + (lo / np.maximum(f, 1)) ** 4)
+    if hi:
+        g *= 1 / np.sqrt(1 + (f / hi) ** 4)
+    return np.fft.irfft(sp * g, len(x)).astype(np.float32)
+
+
+def from_bloom_peak(x):
+    """말렛으로 친 심벌은 소리가 천천히 부풀어 오른다. 가장 커진 곳부터 쓰면 처음부터 꽉 찬 울림이 된다"""
+    hop = int(0.01 * RATE)
+    env = np.array([np.sqrt(np.mean(x[k:k + hop] ** 2)) for k in range(0, len(x) - hop, hop)])
+    start = max(0, int(np.argmax(env)) * hop - int(0.005 * RATE))
+    y = x[start:].copy()
+    y[:int(0.004 * RATE)] *= np.linspace(0, 1, int(0.004 * RATE))
+    return y
+
+
+def build_crash(vcsl, max_len):
+    """
+    드럼 세트 크래시: VCSL에는 드럼 세트용 크래시 녹음이 없어 세 가지를 겹친다.
+    - 스틱으로 친 서스펜디드 심벌: 날카로운 첫 타격
+    - 말렛으로 세게(fff) 친 심벌을 가장 커진 곳부터: 스틱 어깨로 쳤을 때의 꽉 찬 "촤아" 울림
+    - 높은 잡음: 스틱 어깨가 가장자리를 긁는 "쉬익"과 오래 남는 반짝임
+    """
+    stick = load(os.path.join(vcsl, f'{I}/Suspended Cymbal 1/susCymb1_hit_stick_f1.wav'))
+    a = np.abs(stick)
+    stick = stick[max(0, int(np.argmax(a > a.max() * 0.1)) - int(0.002 * RATE)):]
+    wash = from_bloom_peak(load(os.path.join(vcsl, f'{I}/Suspended Cymbal 2/susCymb2_hit_fff1.wav')))
+    n = int(max_len * RATE)
+    stick = np.pad(stick, (0, max(0, n - len(stick))))[:n] / np.abs(stick).max()
+    wash = np.pad(wash, (0, max(0, n - len(wash))))[:n] / np.abs(wash).max()
+    t = np.arange(n) / RATE
+    rng = np.random.default_rng(7)
+    hiss = shape(rng.standard_normal(n).astype(np.float32), lo=6000, hi=16000)
+    hiss *= (0.7 * np.exp(-t / 0.05) + 0.3 * np.exp(-t / 1.2)) / np.abs(hiss).max()
+    x = 0.75 * stick + 1.0 * wash + 0.8 * hiss
+    x = shape(x, lo=180)
+    fade = int(n * 0.3)
+    x[-fade:] *= np.linspace(1, 0, fade) ** 2
+    return x * (10 ** (-1 / 20) / np.abs(x).max())
+
+
 def main(vcsl):
     os.makedirs(OUT, exist_ok=True)
-    for name, (rel, max_len) in SAMPLES.items():
-        x = process(load(os.path.join(vcsl, rel)), max_len)
+    jobs = {name: (lambda rel=rel, max_len=max_len: process(load(os.path.join(vcsl, rel)), max_len)) for name, (rel, max_len) in SAMPLES.items()}
+    jobs['crash'] = lambda: build_crash(vcsl, 3.5)
+    only = sys.argv[2:]
+    for name, make in jobs.items():
+        if only and name not in only:
+            continue
+        x = make()
         out = os.path.join(OUT, f'{name}.mp3')
         subprocess.run(
             ['ffmpeg', '-v', 'error', '-y', '-f', 'f32le', '-ar', str(RATE), '-ac', '1', '-i', '-',
