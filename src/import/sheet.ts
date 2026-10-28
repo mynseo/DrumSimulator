@@ -386,12 +386,24 @@ function readStaff(
   const verticals = segs.filter((g) => VERTICAL(g)).map((g) => ({ x: (g.x1 + g.x2) / 2, lo: Math.min(g.y1, g.y2), hi: Math.max(g.y1, g.y2), w: g.width }));
   // 끝에 음표 머리가 붙은 세로선은 기둥이다 (빔에서 맨 아랫줄 머리까지 오선을 꿰뚫는 긴 기둥)
   const headGlyphs = glyphs.filter((x) => x.sym.t === 'head').map(({ g }) => g);
-  const headAtEnd = (v: { x: number; lo: number; hi: number }) =>
-    headGlyphs.some((g) => v.x >= g.x - 0.3 * s && v.x <= g.x + g.width + 0.3 * s && (Math.abs(g.y - v.lo) < 0.7 * s || Math.abs(g.y - v.hi) < 0.7 * s));
+  const beamEnds = segs
+    .filter((g) => g.width >= 0.25 * s && Math.abs(g.x2 - g.x1) > 0.5 * s && Math.abs(g.y2 - g.y1) <= 0.7 * Math.abs(g.x2 - g.x1))
+    .flatMap((g) => [
+      { x: g.x1, y: g.y1 },
+      { x: g.x2, y: g.y2 },
+    ]);
+  const headAtEnd = (v: { x: number; lo: number; hi: number }) => {
+    const head = (y: number) => headGlyphs.some((g) => v.x >= g.x - 0.3 * s && v.x <= g.x + g.width + 0.3 * s && Math.abs(g.y - y) < 0.7 * s);
+    const beam = (y: number) => beamEnds.some((e) => Math.abs(e.x - v.x) < 0.5 * s && Math.abs(e.y - y) < 0.7 * s);
+    // 오선 위아래 끝줄에 꼭 맞는 선은 마디줄일 가능성이 커서, 한쪽 끝에 머리·다른 쪽 끝에 빔이 붙어 있을 때만 기둥으로 본다
+    const exact = Math.abs(v.hi - st.top) < 0.3 * s && Math.abs(v.lo - st.bottom) < 0.3 * s;
+    if (exact) return (head(v.lo) && beam(v.hi)) || (head(v.hi) && beam(v.lo));
+    return head(v.lo) || head(v.hi);
+  };
   const barSegs = verticals
     .filter((v) => v.lo <= st.bottom + 0.3 * s && v.hi >= st.top - 0.3 * s && v.x > st.x0 + 1 && v.x <= st.x1 + 1)
     .filter((v) => Math.abs(v.hi - st.top) < 0.3 * s || Math.abs(v.lo - st.bottom) < 0.3 * s || v.hi - v.lo > (st.top - st.bottom) * 2.5)
-    .filter((v) => !(Math.abs(v.hi - st.top) < 0.3 * s && Math.abs(v.lo - st.bottom) < 0.3 * s) ? !headAtEnd(v) : true)
+    .filter((v) => !headAtEnd(v))
     .sort((a, b) => a.x - b.x);
   for (const v of barSegs) {
     const last = bars[bars.length - 1];

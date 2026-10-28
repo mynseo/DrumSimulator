@@ -77,28 +77,41 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     rowRun.push({ len: best, x0: bestX });
     maxRun = Math.max(maxRun, best);
   }
-  const lines: Line[] = [];
-  for (let y = 0; y < h; y++) {
-    const r = rowRun[y];
-    if (r.len < maxRun * 0.75 || r.len < w * 0.3) continue;
-    const last = lines[lines.length - 1];
-    if (last && y === last.y1 + 1) {
-      last.y1 = y;
-      last.x0 = Math.min(last.x0, r.x0);
-      last.x1 = Math.max(last.x1, r.x0 + r.len - 1);
-    } else lines.push({ y0: y, y1: y, x0: r.x0, x1: r.x0 + r.len - 1 });
-  }
-  const staves: Stave[] = [];
-  for (let i = 0; i + 4 < lines.length; ) {
-    const five = lines.slice(i, i + 5);
-    const mids = five.map((l) => (l.y0 + l.y1) / 2);
-    const gaps = mids.slice(1).map((m, k) => m - mids[k]);
-    const g = gaps.reduce((a, b) => a + b, 0) / 4;
-    if (g > 4 && gaps.every((d) => Math.abs(d - g) < Math.max(1.6, g * 0.15))) {
-      staves.push({ lines: five, s: g, top: mids[0], bottom: mids[4], x0: Math.min(...five.map((l) => l.x0)), x1: Math.max(...five.map((l) => l.x1)) });
-      i += 5;
-    } else i++;
-  }
+  const collect = (keep: (y: number) => boolean) => {
+    const lines: Line[] = [];
+    for (let y = 0; y < h; y++) {
+      if (!keep(y)) continue;
+      const r = rowRun[y];
+      const last = lines[lines.length - 1];
+      if (last && y === last.y1 + 1) {
+        last.y1 = y;
+        last.x0 = Math.min(last.x0, r.x0);
+        last.x1 = Math.max(last.x1, r.x0 + r.len - 1);
+      } else lines.push({ y0: y, y1: y, x0: r.x0, x1: r.x0 + r.len - 1 });
+    }
+    return lines;
+  };
+  const group = (lines: Line[], sameLength: boolean) => {
+    const found: Stave[] = [];
+    for (let i = 0; i + 4 < lines.length; ) {
+      const five = lines.slice(i, i + 5);
+      const mids = five.map((l) => (l.y0 + l.y1) / 2);
+      const gaps = mids.slice(1).map((m, k) => m - mids[k]);
+      const g = gaps.reduce((a, b) => a + b, 0) / 4;
+      const aligned = !sameLength || five.every((l) => Math.abs(l.x0 - five[0].x0) < g * 2 && Math.abs(l.x1 - five[0].x1) < g * 2);
+      if (g > 4 && aligned && gaps.every((d) => Math.abs(d - g) < Math.max(1.6, g * 0.15))) {
+        found.push({ lines: five, s: g, top: mids[0], bottom: mids[4], x0: Math.min(...five.map((l) => l.x0)), x1: Math.max(...five.map((l) => l.x1)) });
+        i += 5;
+      } else i++;
+    }
+    return found;
+  };
+  // 쪽 폭을 거의 다 쓰는 줄 다섯 = 오선
+  const staves = group(collect((y) => rowRun[y].len >= maxRun * 0.75 && rowRun[y].len >= w * 0.3), false);
+  // 마디가 적어 짧게 끝나는 오선(한 줄에 두 마디 등): 남은 곳에서 길이가 같은 줄 다섯을 다시 찾는다
+  const near = (y: number) => staves.some((st) => y > st.top - 2 * st.s && y < st.bottom + 2 * st.s);
+  staves.push(...group(collect((y) => rowRun[y].len >= w * 0.25 && rowRun[y].len < maxRun * 0.75 && !near(y)), true));
+  staves.sort((a, b) => a.top - b.top);
   if (!staves.length) return { glyphs: [], segments: [] };
   const s = staves.map((st) => st.s).sort((a, b) => a - b)[staves.length >> 1];
 
@@ -415,19 +428,23 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     for (const o of [b, right, tl, br]) textBlobs.add(o);
   }
 
-  // 잇단음표 숫자 3·5·6: 오선 밖, 기둥에 붙지 않은 숫자
+  // 잇단음표 숫자 3·5·6: 오선 밖, 기둥에 붙지 않은 숫자.
+  // 가는 획이 옅은 회색이라 조각날 수 있어, 바로 옆 조각들을 모아 연한 회색까지 검게 보고 읽는다
+  const small = (o: Blob) => (o.x1 - o.x0 + 1) / s < 1.4 && hOf(o) < 2;
   for (const b of blobs) {
-    if (textBlobs.has(b) || timeSig.has(b)) continue;
-    const H = hOf(b);
-    const W = (b.x1 - b.x0 + 1) / s;
-    const { st, d } = staveOf((b.y0 + b.y1) / 2);
+    if (textBlobs.has(b) || timeSig.has(b) || !small(b)) continue;
+    const pieces = blobs.filter((o) => !textBlobs.has(o) && !timeSig.has(o) && small(o) && o.x0 <= b.x1 + 0.4 * s && o.x1 >= b.x0 - 0.4 * s && o.y0 <= b.y1 + 0.4 * s && o.y1 >= b.y0 - 0.4 * s);
+    const box = { x0: Math.min(...pieces.map((o) => o.x0)), x1: Math.max(...pieces.map((o) => o.x1)), y0: Math.min(...pieces.map((o) => o.y0)), y1: Math.max(...pieces.map((o) => o.y1)) };
+    const H = (box.y1 - box.y0 + 1) / s;
+    const W = (box.x1 - box.x0 + 1) / s;
+    const { st, d } = staveOf((box.y0 + box.y1) / 2);
     // (쪽 번호는 오선 오른쪽 끝 바깥에 있다)
-    if (d < 0.5 * s || d > 6 * s || H < 0.9 || H > 2 || W < 0.45 || W > 1.4 || cxOf(b) < st.x0 + 3.2 * s || cxOf(b) > st.x1 - 1.5 * s) continue;
-    if (thin.some((v) => v.x1 >= b.x0 - 2 && v.x0 <= b.x1 + 2 && v.y0 <= b.y1 && v.y1 >= b.y0)) continue;
-    const n = digitOf(b);
+    if (d < 0.5 * s || d > 6 * s || H < 0.9 || H > 2 || W < 0.45 || W > 1.4 || (box.x0 + box.x1) / 2 < st.x0 + 3.2 * s || (box.x0 + box.x1) / 2 > st.x1 - 1.5 * s) continue;
+    if (thin.some((v) => v.x1 >= box.x0 - 2 && v.x0 <= box.x1 + 2 && v.y0 <= box.y1 && v.y1 >= box.y0)) continue;
+    const n = pieces.length === 1 ? digitOf(b) : readShape(box, (x, y) => img.gray[y * w + x] < 200, DIGIT_TEMPLATES, 260);
     if (n !== '3' && n !== '5' && n !== '6') continue;
-    glyph(n === '3' ? '\ue883' : n === '5' ? '\ue885' : '\ue886', b.x0, (b.y0 + b.y1) / 2, b.x1 - b.x0 + 1);
-    textBlobs.add(b);
+    glyph(n === '3' ? '\ue883' : n === '5' ? '\ue885' : '\ue886', box.x0, (box.y0 + box.y1) / 2, box.x1 - box.x0 + 1);
+    for (const o of pieces) textBlobs.add(o);
   }
 
   // 4분쉼표는 오선을 지울 때 여러 조각으로 갈라진다: 기둥 없는 좁은 세로 띠에 모인 작은 조각들
@@ -489,8 +506,12 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     let pieces: { x0: number; x1: number }[] = [];
     if (d > 6 * s || isHeader || timeSig.has(b) || textBlobs.has(b)) kind = 'skip';
     else if (cy < st.top && W >= 0.6 && H <= 1.6 && topBridge(b)) kind = 'beam';
+    // 오선 안까지 내려온 기운 빔 토막: 두 기둥의 윗끝을 잇고, 머리처럼 위가 둥글지 않고 곧다
+    else if (inStaff && W >= 0.9 && W <= 2.2 && H <= 1.6 && topBridge(b) && roundTop(b, w, label, id) < 0.12) kind = 'beam';
     // 두 기둥 사이의 얇고 짧은 토막(32분음표의 셋째 빔 등). 머리는 이보다 키가 크고 더 꽉 차 있다
     else if (cy < st.top && W >= 0.8 && W <= 2.2 && (H <= 0.6 || (H <= 0.8 && density < 0.8)) && bridges(b)) kind = 'beam';
+    // 오선 안의 두 겹 빔 아래 토막: 기둥이 꿰뚫고 지나가며, 위아래가 곧은 납작한 띠
+    else if (inStaff && W >= 1.1 && W <= 2.2 && H <= 0.8 && bridges(b) && roundTop(b, w, label, id) < 0.12) kind = 'beam';
     else if (d < 2 * s && H >= 0.75 && H <= 1.4 && W >= 1.9 && W <= 8 && density < 0.6 && (pieces = splitX(b, s, w, label, id)).length) kind = 'xs';
     // 머리보다 납작하고 넓은 오선 밖 조각: 두 겹 빔의 아래 빔 토막
     else if (!inStaff && W >= 1.3 && W <= 2.2 && H < 0.8 && density < 0.75 && thicknessOk(b, s, w, label, id) && bridges(b)) kind = 'beam';
@@ -867,6 +888,16 @@ function solidRows(b: Blob, w: number, label: Int32Array, id: number): number {
     if (best >= 0.6 * bw) solid++;
   }
   return rows ? solid / rows : 0;
+}
+
+/** 윗선이 가운데에서 얼마나 솟았는가 (높이 대비). 타원 머리는 크고, 곧은 빔 토막은 0에 가깝다 */
+function roundTop(b: Blob, w: number, label: Int32Array, id: number): number {
+  const top = (f: number) => {
+    const x = Math.round(b.x0 + (b.x1 - b.x0) * f);
+    for (let y = b.y0; y <= b.y1; y++) if (label[y * w + x] === id) return y;
+    return b.y1;
+  };
+  return ((top(0.2) + top(0.8)) / 2 - top(0.5)) / (b.y1 - b.y0 + 1);
 }
 
 function lobes(b: Blob, w: number, label: Int32Array, id: number): number {

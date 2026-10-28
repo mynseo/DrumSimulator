@@ -111,4 +111,19 @@ describe('그림 악보 인식', () => {
     const signs = r.glyphs.filter((x) => x.char === '\ue500' || x.char === '\ue501').map((x) => x.char.charCodeAt(0).toString(16));
     expect(signs).toEqual(['e500', 'e501']);
   });
+
+  it('마디가 적어 짧게 끝나는 오선도 찾는다', () => {
+    const h = 400;
+    const g = new Uint8Array(W * h).fill(255);
+    const line = (y: number, x1: number) => g.fill(0, y * W + 20, y * W + x1);
+    for (let k = 0; k < 5; k++) line(100 + k * S, 580);
+    // 한 줄에 두 마디뿐인 짧은 오선
+    for (let k = 0; k < 5; k++) line(260 + k * S, 300);
+    const r = recognizeImage({ gray: g, w: W, h, x0: 0, y0: 840 - h, x1: W, y1: 840 }, true);
+    expect(r.debug!.staves.map((st) => [st.top, st.x1])).toEqual([
+      [100, 579],
+      [260, 299],
+    ]);
+  });
 });
+
