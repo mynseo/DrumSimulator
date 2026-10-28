@@ -1,6 +1,6 @@
 // claude.ai 아티팩트(단일 HTML 페이지)로 빌드한다.
 // three.js는 jsDelivr에서 import map으로 불러오고, 앱 JS·CSS는 페이지 안에 넣는다.
-import { mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { join } from 'node:path';
@@ -62,7 +62,9 @@ console.log(`함께 올릴 파일: ${samples.length}개 → samples/acoustic/*.m
 // 아티팩트 호스팅은 .glb를 내주지 않으므로, 모든 데이터를 안에 넣은 glTF JSON(.json)으로 바꿔 둔다
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 mkdirSync(join(outDir, 'models'), { recursive: true });
-for (const f of readdirSync('public/models').filter((f) => f.endsWith('.glb'))) {
+// (지금은 기본 캐릭터가 모두 도형이라 모델이 없다. glTF 캐릭터를 public/models에 넣으면 함께 바뀐다)
+const modelFiles = existsSync('public/models') ? readdirSync('public/models').filter((f) => f.endsWith('.glb')) : [];
+for (const f of modelFiles) {
   const { json, resources } = await io.writeJSON(await io.read(join('public/models', f)));
   for (const item of [...(json.buffers ?? []), ...(json.images ?? [])]) {
     if (!item.uri || !resources[item.uri]) continue;
