@@ -54,6 +54,7 @@
           <button id="import" class="ghost">파일 열기</button>
           <button id="tab" class="ghost">드럼 탭</button>
           <button id="export" class="ghost">저장</button>
+          <button id="marks" class="ghost">기호별 악기</button>
         </div>
         <label class="row">마디 <input id="bars" type="number" min="1" max="256" step="1" /></label>
         <label class="row">박 나눔
@@ -126,6 +127,17 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
         </div>
       </form>
     </dialog>
+    <dialog id="marks-dialog">
+      <form method="dialog">
+        <h3>기호별 악기</h3>
+        <p class="hint">PDF 악보의 기호마다 어떤 악기로 칠지 정해요. 악보마다 클로즈·오픈 하이햇, 크래시, 라이드를 그리는 자리가 다를 때 쓰세요.</p>
+        <div id="marks-list" class="marks-list"></div>
+        <label class="row switch remember">앞으로 여는 PDF에도 이대로 <input id="marks-remember" type="checkbox" /></label>
+        <div class="actions">
+          <button value="close" class="primary">완료</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="help-dialog">
       <form method="dialog">
         <h3>사용법</h3>
@@ -136,6 +148,7 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
             <li><b>길게 누르기 · 우클릭</b> 칠 손 정하기 (자동 → 오른손 → 왼손)</li>
             <li><b>맨 위 숫자 줄</b> 그 자리로 이동</li>
             <li><b>더보기 → 파일 열기</b> PDF 드럼 악보 · MIDI · 음원 · 드럼 탭</li>
+            <li><b>더보기 → 기호별 악기</b> PDF 악보의 기호마다 하이햇·크래시·라이드 등 칠 악기 바꾸기</li>
             <li class="kbd-only"><b>Space</b> 재생 / 멈춤</li>
           </ul>
           <div class="legend">

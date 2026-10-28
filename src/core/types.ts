@@ -31,6 +31,8 @@ export interface ScoreNote {
   hand?: Hand;
   /** 플램: 다른 손이 아주 살짝 먼저 약하게 친다 (손으로 치는 악기만) */
   flam?: boolean;
+  /** PDF 악보에서 읽은 기호 ("머리모양:오선위치[:o 열림 표시][:r ride 글씨]"). 기호별 악기 지정에 쓴다 */
+  mark?: string;
 }
 
 export interface Score {

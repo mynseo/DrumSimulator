@@ -317,6 +317,29 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(at(score, 'snare')).toEqual([1, 3, 4, 5, 6]);
   });
 
+  it('두 마디 반복(•//•)은 앞의 두 마디를 그대로 친다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    for (const x of [170, 300, 430, 560]) st.barline(x);
+    rockBar(st, 40, 170);
+    // 둘째 마디: 4박 모두 스네어
+    st.voice(170, 300, 'up', [0, 1, 2, 3].map((beat) => ({ beat, len: 1, heads: [SNARE] })));
+    // 셋째·넷째 마디 사이 마디줄 위의 두 마디 반복 기호
+    b.glyph('\ue501', 415, st.y(4), 'Bravura', 30, 20);
+    const { score } = readSheet([b.page()]);
+    expect(score.bars).toBe(4);
+    expect(at(score, 'snare')).toEqual([1, 3, 4, 5, 6, 7, 9, 11, 12, 13, 14, 15]);
+  });
+
+  it('음마다 악보 기호(머리 모양·자리)를 남긴다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(560);
+    rockBar(st, 40, 560);
+    const { score } = readSheet([b.page()]);
+    expect(new Set(score.notes.map((n) => n.mark))).toEqual(new Set(['x:9', 'black:5', 'black:1']));
+  });
+
   it('악보가 없는 PDF는 알려 준다', () => {
     expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/악보를 찾지 못했어요/);
   });

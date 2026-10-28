@@ -51,7 +51,7 @@ type Sym =
   | { t: 'graceSlash'; tremolo?: number }
   | { t: 'tremolo'; n: number }
   | { t: 'paren' }
-  | { t: 'measureRepeat' }
+  | { t: 'measureRepeat'; bars?: number }
   | { t: 'tuplet'; n: number }
   | { t: 'timeDigit'; d: number };
 
@@ -135,6 +135,7 @@ const SMUFL: Record<string, Sym> = {
   '\ue0f5': { t: 'paren' },
   '\ue0f6': { t: 'paren' },
   '\ue500': { t: 'measureRepeat' },
+  '\ue501': { t: 'measureRepeat', bars: 2 }, // 두 마디 반복 •//•
   '\ue220': { t: 'tremolo', n: 1 },
   '\ue221': { t: 'tremolo', n: 2 },
   '\ue222': { t: 'tremolo', n: 3 },
@@ -336,15 +337,15 @@ export interface ReadMeasure {
   x0: number;
   x1: number;
   /** 박 위치 → 악기 */
-  notes: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand }[];
+  notes: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand; mark?: string }[];
   /** 박자를 계산하지 못해 위치로 어림했다 */
   approximate: boolean;
   /** 실제 길이(박). 못갖춘마디면 박자표보다 짧다 */
   length: number;
   /** 이 마디의 박자표 박 수 (4분음표 기준. 3/4 = 3, 6/8 = 3) */
   meter: number;
-  /** 한 마디 반복 기호(%): 바로 앞 마디를 그대로 친다 */
-  repeatPrev?: boolean;
+  /** 마디 반복 기호: 이만큼 앞의 마디를 그대로 친다 (•/• = 1, •//• = 2) */
+  repeatPrev?: number;
   /** 여러 마디 쉼표: 이만큼의 빈 마디 */
   restBars?: number;
   marks: MeasureMarks;
@@ -757,7 +758,9 @@ function readStaff(
     const inM = (x: number) => x >= e.x0 && x < e.x1;
     const cs = chords.filter((c) => inM(c.x));
     const rs = rests.filter((r) => inM(r.x));
-    const simile = glyphs.some(({ g, sym }) => sym.t === 'measureRepeat' && g.x >= e.x0 && g.x < e.x1);
+    // 한 마디 반복은 마디 안에, 두 마디 반복은 두 마디 사이 마디줄 위에 걸쳐 놓인다
+    const repeatSign = glyphs.find(({ g, sym }) => sym.t === 'measureRepeat' && ((sym as { bars?: number }).bars ?? 1) > 1 ? g.x < e.x1 && g.x + g.width > e.x0 : sym.t === 'measureRepeat' && g.x >= e.x0 && g.x < e.x1);
+    const simile = !!repeatSign;
     // 마디 첫 음보다 앞에 있는 박자표부터 이 마디에 적용된다
     const firstX = Math.min(e.x1, ...cs.map((c) => c.x), ...rs.map((r) => r.x));
     while (sigs.length && sigs[0].x < firstX) meter.beats = sigs.shift()!.beats;
@@ -835,9 +838,13 @@ function readStaff(
         const at = beat + k * (c.tremolo ?? 0);
         for (const h of c.heads) {
           let instrument = instrumentAt(h, c.open);
-          if (instrument === 'hihatClosed' && !c.closed && rideAt(c.x)) instrument = 'ride';
+          const rideText = instrument === 'hihatClosed' && !c.closed && rideAt(c.x);
+          if (rideText) instrument = 'ride';
           if (notes.some((n) => Math.abs(n.beat - at) < 1e-6 && n.instrument === instrument)) continue;
-          const note: ReadMeasure['notes'][number] = { beat: at, instrument, velocity: k === 0 ? velocity : VELOCITY.normal };
+          // 악보 기호(머리 모양·높이·표시): 사용자가 기호마다 악기를 다시 정할 수 있게 남긴다
+          const cymbal = h.kind === 'x' || h.kind === 'circleX' || h.pos >= 9;
+          const mark = `${h.kind}:${h.pos}${c.open && cymbal ? ':o' : ''}${rideText ? ':r' : ''}`;
+          const note: ReadMeasure['notes'][number] = { beat: at, instrument, velocity: k === 0 ? velocity : VELOCITY.normal, mark };
           notes.push(note);
           if (k === 0) added.push(note);
         }
@@ -859,7 +866,7 @@ function readStaff(
       if (num) restBars = Number(num.str.trim());
     }
     notes.sort((a, b) => a.beat - b.beat);
-    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, meter: beatsPerBar, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat }, ...(simile && !cs.length ? { repeatPrev: true } : {}), ...(restBars > 1 ? { restBars } : {}) });
+    out.push({ x0: e.x0, x1: e.x1, notes, approximate, length, meter: beatsPerBar, marks: { ...emptyMarks(), startRepeat: e.startRepeat, endRepeat: e.endRepeat }, ...(repeatSign && !cs.length ? { repeatPrev: (repeatSign.sym as { bars?: number }).bars ?? 1 } : {}), ...(restBars > 1 ? { restBars } : {}) });
   });
   // 줄 끝의 미리 알림 박자표는 다음 줄 첫 마디부터
   for (const sg of sigs) meter.beats = sg.beats;
@@ -1165,9 +1172,11 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       const slotOf: number[] = [];
       main.forEach((m, k) => {
         const variants = read.map((r) => r.find((x) => Math.abs(x.x0 - m.x0) < 3 * s0 && Math.abs(x.x1 - m.x1) < 3 * s0) ?? null).filter((x): x is ReadMeasure => !!x);
-        // 한 마디 반복(%)은 바로 앞에 적힌 마디의 음을 그대로 쓴다
-        const prev = slots[slots.length - 1];
-        for (const v of variants) if (v.repeatPrev && prev) v.notes = prev.variants[0].notes.map((n) => ({ ...n }));
+        // 마디 반복(•/•, •//•)은 그만큼 앞에 적힌 마디의 음을 그대로 쓴다
+        for (const v of variants) {
+          const src = v.repeatPrev ? slots[slots.length - v.repeatPrev] : undefined;
+          if (src) v.notes = src.variants[0].notes.map((n) => ({ ...n }));
+        }
         slotOf[k] = slots.length;
         slots.push({ variants, labels: labels.slice(0, variants.length), marks: { ...m.marks } });
         if (m.restBars) {
@@ -1252,7 +1261,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   if (order.length === MAX_BARS) warnings.push(`너무 길어서 앞 ${MAX_BARS}마디만 불러왔어요`);
 
   // 박 위치 → 칸
-  const placed: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand }[] = [];
+  const placed: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand; mark?: string }[] = [];
   let approximated = 0;
   const barBeats: number[] = [];
   let barStart = 0;
@@ -1278,7 +1287,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
     const key = `${step}:${n.instrument}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    notes.push({ step, instrument: n.instrument, velocity: n.velocity, ...(n.flam ? { flam: true } : {}), ...(n.hand ? { hand: n.hand } : {}) });
+    notes.push({ step, instrument: n.instrument, velocity: n.velocity, ...(n.flam ? { flam: true } : {}), ...(n.hand ? { hand: n.hand } : {}), ...(n.mark ? { mark: n.mark } : {}) });
   }
   if (!notes.length) throw new Error('드럼 음표를 찾지 못했어요');
   const uniq = new Set(order.map((o) => o.slot)).size;

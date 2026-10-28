@@ -19,7 +19,9 @@ import { LiveMotion } from './motion/LiveMotion';
 import { chips, popovers } from './ui/controls';
 import { Editor } from './ui/Editor';
 import { instrumentForKey, PADS, Pads } from './ui/Pads';
+import { MarksDialog, savedMarkMap } from './ui/MarksDialog';
 import { SamplesDialog } from './ui/SamplesDialog';
+import { applyMarkMap } from './core/marks';
 
 const STORAGE_KEY = 'drumsim.score.v1';
 const CHARACTER_KEY = 'drumsim.character';
@@ -236,6 +238,9 @@ fileInput.addEventListener('change', async () => {
     } else if (isPdfFile(file)) {
       toast('악보 읽는 중…', 0);
       const sheet = await scoreFromPdf(file, (page, pages) => toast(`악보 읽는 중… ${page}/${pages}쪽`, 0));
+      // 앞으로 여는 PDF에도 쓰기로 한 기호별 악기 지정
+      const saved = savedMarkMap();
+      if (saved && applyMarkMap(sheet.score, saved)) sheet.warnings.push('저장해 둔 기호별 악기 지정을 적용했어요');
       transport.stop();
       updatePlayButton();
       setScore(sheet.score);
@@ -259,6 +264,12 @@ fileInput.addEventListener('change', async () => {
 
 const tabDialog = $<HTMLDialogElement>('tab-dialog');
 $('tab').addEventListener('click', () => tabDialog.showModal());
+
+// ---- 기호별 악기 ----
+const marksDialog = new MarksDialog($<HTMLDialogElement>('marks-dialog'), $('marks-list'), $<HTMLInputElement>('marks-remember'));
+marksDialog.onPreview = (instrument) => transport.playNow(instrument, 0.8);
+marksDialog.onChange = () => scoreChanged({ rerender: true });
+$('marks').addEventListener('click', () => marksDialog.open(score));
 tabDialog.addEventListener('close', () => {
   if (tabDialog.returnValue !== 'ok') return;
   try {

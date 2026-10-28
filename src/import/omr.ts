@@ -390,21 +390,29 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     for (const o of blobs) if (cxOf(o) >= done.x0 - 1 && cxOf(o) <= done.x1 + 1 && o.y0 >= c.st.top - 0.6 * s && o.y1 <= c.st.bottom + 0.6 * s) textBlobs.add(o);
   }
 
-  // 한 마디 반복(%): 오선 안의 빗금 하나와 그 왼쪽 위·오른쪽 아래의 점 두 개
-  for (const b of blobs) {
-    if (textBlobs.has(b)) continue;
+  // 마디 반복: 오선 안의 빗금(•/• 하나, •//• 둘)과 왼쪽 위·오른쪽 아래의 점 두 개
+  const slash = (b: Blob) => {
     const W = (b.x1 - b.x0 + 1) / s;
     const H = hOf(b);
+    return W >= 0.8 && W <= 2.8 && H >= 1.2 && H <= 2.8 && b.area / ((b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1)) <= 0.5;
+  };
+  for (const b of blobs) {
+    if (textBlobs.has(b) || !slash(b)) continue;
     const { st, d } = staveOf((b.y0 + b.y1) / 2);
-    if (d > 0 || W < 1.2 || W > 2.8 || H < 1.2 || H > 2.8 || b.area / ((b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1)) > 0.5) continue;
-    const dot = (o: Blob) => o !== b && (o.x1 - o.x0 + 1) / s <= 0.6 && hOf(o) <= 0.6 && cxOf(o) >= b.x0 - 0.3 * s && cxOf(o) <= b.x1 + 0.3 * s && o.y0 >= b.y0 - 0.3 * s && o.y1 <= b.y1 + 0.3 * s;
-    const midX = cxOf(b);
+    if (d > 0) continue;
+    // 바로 오른쪽에 같은 크기의 빗금이 하나 더 있으면 두 마디 반복
+    const twin = blobs.find((o) => o !== b && !textBlobs.has(o) && slash(o) && o.x0 > b.x0 && o.x0 - b.x1 < 0.9 * s && Math.abs(o.y0 - b.y0) < 0.4 * s && Math.abs(o.y1 - b.y1) < 0.4 * s);
+    const right = twin ?? b;
+    const x0 = b.x0;
+    const x1 = right.x1;
+    const dot = (o: Blob) => o !== b && o !== right && (o.x1 - o.x0 + 1) / s <= 0.6 && hOf(o) <= 0.6 && cxOf(o) >= x0 - 0.3 * s && cxOf(o) <= x1 + 0.3 * s && o.y0 >= b.y0 - 0.3 * s && o.y1 <= b.y1 + 0.3 * s;
     const midY = (b.y0 + b.y1) / 2;
-    const tl = blobs.find((o) => dot(o) && cxOf(o) < midX && (o.y0 + o.y1) / 2 < midY);
-    const br = blobs.find((o) => dot(o) && cxOf(o) > midX && (o.y0 + o.y1) / 2 > midY);
+    const tl = blobs.find((o) => dot(o) && cxOf(o) < cxOf(b) && (o.y0 + o.y1) / 2 < midY);
+    const br = blobs.find((o) => dot(o) && cxOf(o) > cxOf(right) && (o.y0 + o.y1) / 2 > midY);
     if (!tl || !br) continue;
-    glyph('', b.x0, (st.top + st.bottom) / 2, b.x1 - b.x0 + 1);
-    for (const o of [b, tl, br]) textBlobs.add(o);
+    if (twin && (b.x1 - b.x0 + 1) / s > 2) continue;
+    glyph(twin ? '\ue501' : '', x0, (st.top + st.bottom) / 2, x1 - x0 + 1);
+    for (const o of [b, right, tl, br]) textBlobs.add(o);
   }
 
   // 잇단음표 숫자 3·5·6: 오선 밖, 기둥에 붙지 않은 숫자

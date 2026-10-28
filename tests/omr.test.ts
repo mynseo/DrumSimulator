@@ -85,4 +85,30 @@ describe('그림 악보 인식', () => {
     expect(at('kick')).toEqual([0, 1, 2, 3]);
     expect(r.score.bpm).toBe(120);
   });
+
+  it('한 마디 반복(•/•)과 두 마디 반복(•//•)을 알아본다', () => {
+    const g = new Uint8Array(W * H).fill(255);
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = Math.round(y0); y <= Math.round(y1); y++) for (let x = Math.round(x0); x <= Math.round(x1); x++) g[y * W + x] = 0;
+    };
+    for (let k = 0; k < 5; k++) rect(20, T + k * S, 560, T + k * S);
+    for (const x of [20, 200, 380, 560]) rect(x, T, x + 1, T + 4 * S);
+    // 빗금: 왼쪽 아래 → 오른쪽 위, 오선 둘째 줄 ~ 넷째 줄
+    const slash = (x: number) => {
+      for (let t = 0; t <= 1; t += 0.01) rect(x + t * 18, T + 3 * S - t * 2 * S - 2, x + t * 18 + 3, T + 3 * S - t * 2 * S + 2);
+    };
+    const dots = (x0: number, x1: number) => {
+      rect(x0 - 2, T + S + 2, x0 + 2, T + S + 6);
+      rect(x1 - 2, T + 3 * S - 6, x1 + 2, T + 3 * S - 2);
+    };
+    slash(100);
+    dots(102, 118);
+    // 두 마디 반복은 두 마디 사이 마디줄에 걸쳐 놓인다
+    slash(357);
+    slash(383);
+    dots(359, 403);
+    const r = recognizeImage({ gray: g, w: W, h: H, x0: 0, y0: 840 - H, x1: W, y1: 840 });
+    const signs = r.glyphs.filter((x) => x.char === '\ue500' || x.char === '\ue501').map((x) => x.char.charCodeAt(0).toString(16));
+    expect(signs).toEqual(['e500', 'e501']);
+  });
 });
