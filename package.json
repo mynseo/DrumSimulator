@@ -12,6 +12,7 @@
     "build:artifact": "node scripts/build-artifact.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "4.10.38",
     "three": "0.170.0"
   },
   "devDependencies": {

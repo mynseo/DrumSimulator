@@ -8,6 +8,7 @@ import { CHARACTERS } from './drummer/characters';
 import type { DrummerRig } from './drummer/DrummerRig';
 import { drumsFromAudioFile, isAudioFile } from './import/audioFile';
 import { parseMidi } from './import/midi';
+import { isPdfFile, scoreFromPdf } from './import/pdfFile';
 import { parseDrumTab } from './import/tab';
 import { MotionPlanner } from './motion/MotionPlanner';
 import { DEFAULT_SEAT, DrumKit } from './scene/DrumKit';
@@ -139,7 +140,7 @@ bpmInput.addEventListener('change', () => {
   scoreChanged();
 });
 barsInput.addEventListener('change', () => {
-  score.bars = clampInt(barsInput.value, 1, 128, score.bars);
+  score.bars = clampInt(barsInput.value, 1, 256, score.bars);
   score.notes = score.notes.filter((n) => n.step < score.bars * stepsPerBar(score));
   scoreChanged({ rerender: true });
 });
@@ -230,6 +231,14 @@ fileInput.addEventListener('change', async () => {
       updatePlayButton();
       setScore(analysis.score, backing);
       toast(`드럼을 뽑았어요 · ${analysis.score.bpm} BPM`);
+    } else if (isPdfFile(file)) {
+      toast('악보 읽는 중…', 0);
+      const sheet = await scoreFromPdf(file, (page, pages) => toast(`악보 읽는 중… ${page}/${pages}쪽`, 0));
+      transport.stop();
+      updatePlayButton();
+      setScore(sheet.score);
+      const unrolled = sheet.score.bars !== sheet.writtenBars ? ` → 반복 펼쳐 ${sheet.score.bars}마디` : '';
+      toast([`${sheet.writtenBars}마디${unrolled}`, ...sheet.warnings].join(' · '), 5000);
     } else if (/\.midi?$/i.test(file.name)) {
       const { score: s, skipped } = parseMidi(await file.arrayBuffer(), name);
       setScore(s);

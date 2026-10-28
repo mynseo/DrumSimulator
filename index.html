@@ -55,7 +55,7 @@
           <button id="tab" class="ghost">드럼 탭</button>
           <button id="export" class="ghost">저장</button>
         </div>
-        <label class="row">마디 <input id="bars" type="number" min="1" max="128" step="1" /></label>
+        <label class="row">마디 <input id="bars" type="number" min="1" max="256" step="1" /></label>
         <label class="row">박 나눔
           <select id="spb">
             <option value="2">8분</option>
@@ -68,7 +68,7 @@
         </label>
         <label class="row switch">반복 <input id="loop" type="checkbox" checked /></label>
         <label class="row switch">메트로놈 <input id="metro" type="checkbox" /></label>
-        <input id="file" type="file" accept=".mid,.midi,.txt,.json,audio/*,.mp3,.wav,.m4a,.ogg,.flac" hidden />
+        <input id="file" type="file" accept=".mid,.midi,.pdf,.txt,.json,audio/*,.mp3,.wav,.m4a,.ogg,.flac" hidden />
       </div>
     </header>
 
@@ -132,6 +132,7 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
             <li><b>칸 누르기</b> 음 넣기 → 세게 → 약하게 → 지우기</li>
             <li><b>길게 누르기 · 우클릭</b> 칠 손 정하기 (자동 → 오른손 → 왼손)</li>
             <li><b>맨 위 숫자 줄</b> 그 자리로 이동</li>
+            <li><b>더보기 → 파일 열기</b> PDF 드럼 악보 · MIDI · 음원 · 드럼 탭</li>
             <li class="kbd-only"><b>Space</b> 재생 / 멈춤</li>
           </ul>
           <div class="legend">
