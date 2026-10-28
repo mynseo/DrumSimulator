@@ -610,11 +610,28 @@ function readStaff(
     const ratio = t.n === 3 ? 2 / 3 : t.n === 6 ? 4 / 6 : t.n === 5 ? 4 / 5 : 1;
     const voice: 1 | 2 = t.y > (st.top + st.bottom) / 2 ? 1 : 2;
     // 숫자 아래(위)의 빔이 덮는 범위
-    const beam = beams
+    const found = beams
       .filter((b) => b.x1 - s <= t.x && t.x <= b.x2 + s)
       .map((b) => ({ b, d: Math.abs((b.y1 + b.y2) / 2 - t.y) }))
       .filter((x) => x.d < 3.5 * s)
       .sort((a, b) => a.d - b.d)[0]?.b;
+    // 기둥마다 끊겨 그려진 빔(그림 악보)은 끝끼리 이어지는 토막을 하나로 본다
+    const beam = found && { ...found };
+    for (let grown = !!beam; grown && beam; ) {
+      grown = false;
+      for (const b of beams) {
+        if (b.x2 > beam.x2 && b.x1 <= beam.x2 + 0.6 * s && b.x1 >= beam.x2 - 0.6 * s && Math.abs(b.y1 - beam.y2) < 0.6 * s) {
+          beam.x2 = b.x2;
+          beam.y2 = b.y2;
+          grown = true;
+        }
+        if (b.x1 < beam.x1 && b.x2 >= beam.x1 - 0.6 * s && b.x2 <= beam.x1 + 0.6 * s && Math.abs(b.y2 - beam.y1) < 0.6 * s) {
+          beam.x1 = b.x1;
+          beam.y1 = b.y1;
+          grown = true;
+        }
+      }
+    }
     // 숫자 양옆의 가는 가로선 = 잇단 괄호. 괄호가 덮는 범위의 음표·쉼표가 모두 잇단이다
     const midY = t.y + t.size * 0.35;
     // 괄호 선은 두 오선 사이에 있어 다른 오선 몫으로 나뉘었을 수 있으니 페이지 전체에서 찾는다

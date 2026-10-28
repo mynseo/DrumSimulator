@@ -203,7 +203,20 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
   }
   for (const v of lineVerts) {
     const x = PX((v.x0 + v.x1 + 1) / 2);
-    out.segments.push({ x1: x, y1: PY(v.y0), x2: x, y2: PY(v.y1 + 1), width: (v.x1 - v.x0 + 1) * kx });
+    let y0 = v.y0;
+    let y1 = v.y1 + 1;
+    // 오선을 꿰뚫지만 한쪽 끝만 오선 끝줄에 닿는 기둥(빔에서 맨 아랫줄 머리까지)은 마디줄로 보이지 않게 끝을 조금 민다
+    for (const st of staves) {
+      if (y0 > st.top + 0.4 * s || y1 < st.bottom - 0.4 * s) continue;
+      const topEnd = Math.abs(y0 - st.top) < 0.4 * s;
+      const bottomEnd = Math.abs(y1 - st.bottom) < 0.4 * s;
+      const otherStaff = staves.some((o) => o !== st && y0 <= o.bottom && y1 >= o.top);
+      if (topEnd !== bottomEnd && !otherStaff && thin.includes(v)) {
+        if (topEnd && st.top - y0 < 0.4 * s && y1 - st.bottom > 1.5 * s) y0 = st.top - 0.45 * s;
+        if (bottomEnd && y1 - st.bottom < 0.4 * s && st.top - y0 > 1.5 * s) y1 = st.bottom + 0.45 * s;
+      }
+    }
+    out.segments.push({ x1: x, y1: PY(y0), x2: x, y2: PY(y1), width: (v.x1 - v.x0 + 1) * kx });
   }
 
   const staveOf = (y: number) => {
@@ -231,8 +244,30 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     const r = near(b.x1);
     return l.length > 0 && r.some((v) => !l.includes(v));
   };
+  // 오선 위에서 두 기둥의 윗끝을 잇는 조각은 빔이다 (위로 뻗은 기둥 끝에 머리는 오지 않는다)
+  const topBridge = (b: Blob) => {
+    const tops = (x: number) => thin.filter((v) => Math.abs((v.x0 + v.x1) / 2 - x) <= 0.35 * s && v.y0 >= b.y0 - 0.4 * s && v.y0 <= b.y1 && v.y1 > b.y1 + s);
+    const l = tops(b.x0);
+    const r = tops(b.x1);
+    return l.length > 0 && r.some((v) => !l.includes(v));
+  };
+  const stemFoot = (b: Blob) =>
+    thin.some(
+      (v) =>
+        (v.x0 - b.x1 >= -1 && v.x0 - b.x1 <= 3 && v.y1 >= b.y0 && v.y1 <= b.y1 + 0.5 * s && v.y0 < b.y0 - s) ||
+        (b.x0 - v.x1 >= -1 && b.x0 - v.x1 <= 3 && v.y0 <= b.y1 && v.y0 >= b.y0 - 0.5 * s && v.y1 > b.y1 + s),
+    );
   // 꼬리는 기둥 끝에서 시작해 오른쪽으로 뻗는다 (왼쪽 끝이 기둥에 붙어 있다)
-  const flagEnd = (b: Blob) => stemEnds.find((e) => b.x0 >= e.x - 2 && b.x0 <= e.x + 0.35 * s && (e.top ? Math.abs(b.y0 - e.y) < 0.6 * s : Math.abs(b.y1 - e.y) < 0.6 * s));
+  // 위 기둥의 꼬리는 오선 위에, 아래 기둥의 꼬리는 오선 아래에 있다 (오선 쪽 끝에 붙은 것은 이웃 머리)
+  const flagEnd = (b: Blob) => {
+    const { st } = staveOf((b.y0 + b.y1) / 2);
+    return stemEnds.find(
+      (e) =>
+        b.x0 >= e.x - 2 &&
+        b.x0 <= e.x + 0.35 * s &&
+        (e.top ? Math.abs(b.y0 - e.y) < 0.6 * s && b.y1 < st.top + 1.5 * s : Math.abs(b.y1 - e.y) < 0.6 * s && b.y0 > st.bottom - 1.5 * s),
+    );
+  };
 
   // 박자표: 오선 위쪽 절반과 아래쪽 절반에 같은 가로 위치로 겹쳐 놓인 숫자 두 개 (빼고 본다)
   const timeSig = new Set<Blob>();
@@ -303,6 +338,58 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     }
   }
 
+  // 잇단음표 숫자 3·5·6: 오선 밖, 기둥에 붙지 않은 숫자
+  for (const b of blobs) {
+    if (textBlobs.has(b) || timeSig.has(b)) continue;
+    const H = hOf(b);
+    const W = (b.x1 - b.x0 + 1) / s;
+    const { st, d } = staveOf((b.y0 + b.y1) / 2);
+    if (d < 0.5 * s || d > 4 * s || H < 0.9 || H > 2 || W < 0.45 || W > 1.4 || cxOf(b) < st.x0 + 3.2 * s) continue;
+    if (thin.some((v) => v.x1 >= b.x0 - 2 && v.x0 <= b.x1 + 2 && v.y0 <= b.y1 && v.y1 >= b.y0)) continue;
+    const n = digitOf(b);
+    if (n !== '3' && n !== '5' && n !== '6') continue;
+    glyph(n === '3' ? '\ue883' : n === '5' ? '\ue885' : '\ue886', b.x0, (b.y0 + b.y1) / 2, b.x1 - b.x0 + 1);
+    textBlobs.add(b);
+  }
+
+  // 4분쉼표는 오선을 지울 때 여러 조각으로 갈라진다: 기둥 없는 좁은 세로 띠에 모인 작은 조각들
+  for (const a of blobs) {
+    if (textBlobs.has(a) || timeSig.has(a)) continue;
+    const { st, d } = staveOf((a.y0 + a.y1) / 2);
+    if (d > 0 || (a.x1 - a.x0 + 1) / s > 0.9 || hOf(a) > 1.5 || cxOf(a) < st.x0 + 3.2 * s) continue;
+    const group = blobs.filter((o) => !textBlobs.has(o) && o.x0 <= a.x1 + 0.3 * s && o.x1 >= a.x0 - 0.3 * s && o.y1 >= st.top - 0.5 * s && o.y0 <= st.bottom + 0.5 * s && (o.x1 - o.x0 + 1) / s <= 0.9 && hOf(o) <= 1.5);
+    if (group.length < 2) continue;
+    const x0 = Math.min(...group.map((o) => o.x0));
+    const x1 = Math.max(...group.map((o) => o.x1));
+    const y0 = Math.min(...group.map((o) => o.y0));
+    const y1 = Math.max(...group.map((o) => o.y1));
+    if ((x1 - x0 + 1) / s > 1.2 || (y1 - y0 + 1) / s < 2.2 || (y1 - y0 + 1) / s > 3.3) continue;
+    if (thin.some((v) => v.x1 >= x0 - 0.5 * s && v.x0 <= x1 + 0.5 * s && v.y0 <= y1 && v.y1 >= y0)) continue;
+    glyph('', x0, (y0 + y1) / 2, x1 - x0 + 1);
+    for (const o of group) textBlobs.add(o);
+  }
+
+  // 괄호 친 고스트 노트를 기둥이 가로지르면 기둥을 지울 때 "(●" 와 "●)" 두 쪽으로 갈라진다. 다시 붙여 읽는다
+  for (const a of blobs) {
+    if (textBlobs.has(a) || hOf(a) < 1.3 || hOf(a) > 2.3 || (a.x1 - a.x0 + 1) / s > 1) continue;
+    const b = blobs.find(
+      (o) => o !== a && !textBlobs.has(o) && o.x0 > a.x1 && o.x0 - a.x1 <= thinW + 2 && Math.abs(o.y0 - a.y0) < 0.3 * s && Math.abs(o.y1 - a.y1) < 0.3 * s && (o.x1 - o.x0 + 1) / s <= 1,
+    );
+    if (!b) continue;
+    const width = (b.x1 - a.x0 + 1) / s;
+    const stem = thin.some((v) => v.x0 >= a.x1 && v.x1 <= b.x0 && v.y0 <= (a.y0 + a.y1) / 2 && v.y1 >= (a.y0 + a.y1) / 2);
+    if (!stem || width < 1.1 || width > 2.3) continue;
+    const cy = (a.y0 + a.y1) / 2;
+    const { st, d } = staveOf(cy);
+    if (d > 2 * s || cxOf(a) < st.x0 + 3.2 * s) continue;
+    const head = Math.min(1.1 * s, (b.x1 - a.x0 + 1) * 0.6);
+    const cx = (a.x0 + b.x1 + 1) / 2;
+    glyph('\ue0f5', a.x0, cy, 0.4 * s);
+    glyph('\ue0a4', cx - head / 2, cy, head);
+    textBlobs.add(a);
+    textBlobs.add(b);
+  }
+
   for (const b of blobs) {
     const bw = b.x1 - b.x0 + 1;
     const bh = b.y1 - b.y0 + 1;
@@ -320,12 +407,19 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     const id = blobs.indexOf(b);
     const ends = touchesStemEnd(b);
     let cores: { x0: number; x1: number }[] = [];
+    let pieces: { x0: number; x1: number }[] = [];
     if (d > 6 * s || isHeader || timeSig.has(b) || textBlobs.has(b)) kind = 'skip';
-    else if (W <= 0.52 && H <= 0.52 && W >= 0.2 && H >= 0.2 && density >= 0.55) {
+    else if (cy < st.top && W >= 0.6 && H <= 1.6 && topBridge(b)) kind = 'beam';
+    else if (d < 2 * s && H >= 0.75 && H <= 1.4 && W >= 1.9 && W <= 8 && density < 0.6 && (pieces = splitX(b, s, w, label, id)).length) kind = 'xs';
+    // 머리보다 납작하고 넓은 오선 밖 조각: 두 겹 빔의 아래 빔 토막
+    else if (!inStaff && W >= 1.3 && W <= 2.2 && H < 0.8 && density < 0.75 && thicknessOk(b, s, w, label, id) && bridges(b)) kind = 'beam';
+    else if (W <= 0.75 && H <= 0.75 && W >= 0.3 && H >= 0.3 && density >= 0.55 && d < 2 * s && cy < st.bottom && stemFoot(b)) {
+      kind = 'smallHead'; // 기둥 끝에 바로 붙은 작은 조각: 기둥에 반쯤 잘린 작은 머리(고스트 노트)
+    } else if (W <= 0.52 && H <= 0.52 && W >= 0.2 && H >= 0.2 && density >= 0.55) {
       kind = 'dot';
     } else if (W >= 0.52 && W <= 0.9 && H >= 0.45 && H <= 0.85 && density >= 0.7 && d < 2 * s) {
       kind = 'head'; // 작은 머리 (괄호 친 고스트 노트)
-    } else if (!inStaff && W >= 1 && H <= 3.2 && bridges(b) && thicknessOk(b, s, w, label, id)) {
+    } else if (d >= 1.5 * s && W >= 1 && H <= 3.2 && bridges(b) && thicknessOk(b, s, w, label, id)) {
       kind = 'beam';
     } else if (!inStaff && density < 0.55 && flagEnd(b) && H >= 0.8 && H <= 4.8 && W >= 0.45 && W <= 1.6) {
       // 오선 밖에서 기둥 끝에 붙은 획은 꼬리 (대각선이라 X 머리처럼 보일 수 있다)
@@ -337,18 +431,22 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
       else kind = 'x';
     } else if (W > 1.4 && W <= 2.4 && H >= 0.7 && H <= 1.4 && diagonals(b, w, label, id) > 0.6 && density < 0.6) {
       kind = 'x'; // 덧줄이 붙은 X (크래시)
-    } else if (W >= 0.7 && density >= 0.55 && H <= 1.7 && ends.length && thicknessOk(b, s, w, label, id)) {
+    } else if (W >= 0.7 && density >= 0.55 && H <= 1.7 && ends.length && thicknessOk(b, s, w, label, id) && diagonals(b, w, label, id) < 0.5) {
       kind = 'beam'; // 빔 (기울어진 빔·두 겹 빔·짧은 갈고리 빔 포함)
     } else if (W >= 1.5 && H <= 3.2 && ends.length && thicknessOk(b, s, w, label, id) && slanted(b, s, w, label, id)) {
       kind = 'beam'; // 많이 기운 빔: 상자는 성기지만 열마다 두께가 고른 띠 하나
     } else if (W >= 1.1 && H <= 0.8 && density >= 0.75) {
       // 납작하고 긴 외톨이: 오선 가운데면 쉼표(짧으면 온·2분, 아주 길면 여러 마디 쉼)
       if (inStaff && W >= 2.5) kind = 'multirest';
-      else if (inStaff && W <= 1.8) kind = cy < st.top + 2 * s ? 'wholeRest' : 'halfRest';
+      else if (inStaff && W <= 1.8) {
+        // 온쉼표는 줄에 매달리고(위쪽이 줄), 2분쉼표는 줄 위에 앉는다(아래쪽이 줄)
+        const near = (y: number) => Math.min(...st.lines.map((l) => Math.abs((l.y0 + l.y1) / 2 - y)));
+        kind = near(b.y0) < near(b.y1 + 1) ? 'wholeRest' : 'halfRest';
+      }
       else kind = 'beam';
     } else if (W <= 0.55 && H >= 0.9 && H <= 1.9 && d < 2 * s) {
       kind = 'paren'; // 고스트 노트 괄호
-    } else if (W >= 1.2 && W <= 5 && H >= 0.8 && H <= 1.9 && d < 2 * s && (cores = denseCores(b, s, w, label, id)).length) {
+    } else if (W >= 1.2 && W <= 5 && H >= 0.8 && H <= 2.2 && d < 2 * s && (cores = denseCores(b, s, w, label, id)).length) {
       kind = 'ghost'; // 괄호와 붙은 머리
     } else if (W > 1.2 && W <= 2.4 && H >= 0.5 && H <= 1.2 && !inStaff) {
       kind = 'accent';
@@ -373,12 +471,20 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
       case 'head':
         glyph('', left, cy, bw);
         break;
+      case 'xs':
+        // 맞붙은 X 머리 여러 개
+        for (const p of pieces) glyph('', p.x0, cy, p.x1 - p.x0 + 1);
+        break;
       case 'x':
         // 덧줄이 붙어 넓어진 X는 가운데 머리 폭만큼만
         glyph('', cx - Math.min(bw, 1.2 * s) / 2, cy, Math.min(bw, 1.2 * s));
         break;
       case 'circleX':
         glyph('', left, cy, bw);
+        break;
+      case 'smallHead':
+        glyph('\ue0f5', b.x0 - 0.45 * s, cy, 0.4 * s);
+        glyph('\ue0a4', b.x1 + 1 - 0.75 * s, cy, 0.75 * s);
         break;
       case 'dot':
         glyph('', left, cy, bw);
@@ -567,6 +673,15 @@ function denseCores(b: Blob, s: number, w: number, label: Int32Array, id: number
 }
 
 /** 두 대각선 위에 검은 점이 얼마나 있는가 (X 모양이면 1에 가깝다) */
+/** 맞붙은 X 머리 덩어리를 같은 폭으로 나눈다. 조각마다 X 모양이어야 한다 */
+function splitX(b: Blob, s: number, w: number, label: Int32Array, id: number): { x0: number; x1: number }[] {
+  const bw = b.x1 - b.x0 + 1;
+  const k = Math.round(bw / (1.35 * s));
+  if (k < 2) return [];
+  const pieces = Array.from({ length: k }, (_, i) => ({ x0: Math.round(b.x0 + (i * bw) / k), x1: Math.round(b.x0 + ((i + 1) * bw) / k) - 1 }));
+  return pieces.every((p) => diagonals({ ...b, x0: p.x0, x1: p.x1 }, w, label, id) > 0.6) ? pieces : [];
+}
+
 function diagonals(b: Blob, w: number, label: Int32Array, id: number): number {
   const bw = b.x1 - b.x0;
   const bh = b.y1 - b.y0;
