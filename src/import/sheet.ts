@@ -23,7 +23,19 @@ export interface SheetResult {
   approximated: number;
   /** 연주 순서: 펼친 마디마다 악보에 적힌 몇 번째 마디인지 (0부터) */
   order: number[];
+  /** 악보에 적힌 마디마다 페이지 위 자리 (order의 값으로 찾는다) */
+  regions: MeasureRegion[];
   warnings: string[];
+}
+
+/** 악보 위 마디 자리: 페이지(0부터)와 PDF 좌표(위가 +y)의 마디 범위 */
+export interface MeasureRegion {
+  page: number;
+  x0: number;
+  x1: number;
+  /** 드럼 오선의 맨 윗줄·맨 아랫줄 높이 */
+  top: number;
+  bottom: number;
 }
 
 /** 펼친 악보의 최대 길이 */
@@ -1049,6 +1061,7 @@ interface Slot {
   variants: ReadMeasure[];
   labels: (Label | null)[];
   marks: MeasureMarks;
+  region: MeasureRegion;
 }
 interface Label {
   visits: number[];
@@ -1232,10 +1245,11 @@ export function readSheet(input: PageContent[], fallbackTitle = 'PDF 악보'): S
           if (src) v.notes = src.variants[0].notes.map((n) => ({ ...n }));
         }
         slotOf[k] = slots.length;
-        slots.push({ variants, labels: labels.slice(0, variants.length), marks: { ...m.marks } });
+        const region = { page: pi, x0: m.x0, x1: m.x1, top: group[0].top, bottom: group[group.length - 1].bottom };
+        slots.push({ variants, labels: labels.slice(0, variants.length), marks: { ...m.marks }, region });
         if (m.restBars) {
           const first = slots[slots.length - 1];
-          for (let i = 1; i < Math.min(m.restBars, 500); i++) slots.push({ variants: variants.map((v) => ({ ...v, notes: [] })), labels: first.labels, marks: emptyMarks() });
+          for (let i = 1; i < Math.min(m.restBars, 500); i++) slots.push({ variants: variants.map((v) => ({ ...v, notes: [] })), labels: first.labels, marks: emptyMarks(), region });
           // 끝 도돌이표는 마지막 쉼 마디에
           slots[slots.length - 1].marks.endRepeat = first.marks.endRepeat;
           if (m.restBars > 1) first.marks.endRepeat = false;
@@ -1371,6 +1385,7 @@ export function readSheet(input: PageContent[], fallbackTitle = 'PDF 악보'): S
     writtenBars: uniq,
     approximated,
     order: order.map((o) => o.slot),
+    regions: slots.map((s) => s.region),
     warnings,
   };
 }

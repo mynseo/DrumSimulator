@@ -21,6 +21,7 @@ import { Editor } from './ui/Editor';
 import { instrumentForKey, PADS, Pads } from './ui/Pads';
 import { MarksDialog, savedMarkMap } from './ui/MarksDialog';
 import { SamplesDialog } from './ui/SamplesDialog';
+import { SheetView } from './ui/SheetView';
 import { applyMarkMap } from './core/marks';
 
 const STORAGE_KEY = 'drumsim.score.v1';
@@ -57,6 +58,7 @@ const planner = new MotionPlanner(kit);
 const transport = new Transport(timeline);
 const editor = new Editor($('editor'), score);
 const pads = new Pads($('pads'));
+const sheetView = new SheetView($('sheet'));
 const liveMotion = new LiveMotion(kit);
 const liveSticking = new LiveSticking();
 
@@ -94,6 +96,8 @@ function scoreChanged({ rerender = false } = {}) {
 /** 악보를 통째로 바꾼다. 음원에서 뽑은 악보만 원곡을 함께 튼다 */
 function setScore(next: Score, backing: BackingTrack | null = null) {
   score = next;
+  // PDF 악보 보기는 그 PDF를 연 동안만 (다른 곡을 열면 지운다. PDF는 아래에서 다시 채운다)
+  sheetView.clear();
   transport.setBacking(backing);
   $('backing-row').hidden = !backing;
   scoreChanged({ rerender: true });
@@ -247,6 +251,8 @@ fileInput.addEventListener('change', async () => {
       transport.stop();
       updatePlayButton();
       setScore(sheet.score);
+      sheetView.set(sheet.pages, sheet.regions, sheet.order);
+      showPanel('sheet');
       const unrolled = sheet.score.bars !== sheet.writtenBars ? ` → 반복 펼쳐 ${sheet.score.bars}마디` : '';
       toast([`${sheet.writtenBars}마디${unrolled}`, ...sheet.warnings].join(' · '), 5000);
     } else if (/\.midi?$/i.test(file.name)) {
@@ -365,10 +371,12 @@ $('help-keys').innerHTML = PADS.map(
 ).join('');
 $('help').addEventListener('click', () => helpDialog.showModal());
 
-// ---- 아래 패널: 악보 / 드럼 패드 ----
+// ---- 아래 패널: 악보(PDF) / 편집 / 드럼 패드 ----
+type PanelName = 'sheet' | 'score' | 'pads';
 const panel = $('editor-wrap');
-function showPanel(name: 'score' | 'pads') {
+function showPanel(name: PanelName) {
   panel.dataset.panel = name;
+  $('sheet').hidden = name !== 'sheet';
   $('editor').hidden = name !== 'score';
   $('pads').hidden = name !== 'pads';
   panel.querySelectorAll<HTMLElement>('[data-for]').forEach((el) => (el.hidden = el.dataset.for !== name));
@@ -380,13 +388,17 @@ function showPanel(name: 'score' | 'pads') {
   }
 }
 panel.querySelectorAll<HTMLButtonElement>('.tabs [data-panel]').forEach((b) =>
-  b.addEventListener('click', () => showPanel(b.dataset.panel as 'score' | 'pads')),
+  b.addEventListener('click', () => showPanel(b.dataset.panel as PanelName)),
 );
 
 // ---- 편집기 ----
 editor.onChange = () => scoreChanged();
 editor.onSeek = (step) => {
   transport.seek(timeAtStep(timeline, step));
+  pads.resetFollow();
+};
+sheetView.onSeek = (bar) => {
+  transport.seek(timeAtStep(timeline, timeline.barStarts[bar]));
   pads.resetFollow();
 };
 
@@ -410,6 +422,10 @@ function frame(now: number) {
   const step = Math.min(timeline.totalSteps - 1, Math.floor(stepAtTime(timeline, t) + 1e-6));
   editor.setPlayhead(transport.playing || t > 0 ? step : -1);
   const { bar, offset } = barOfStep(timeline.barStarts, Math.max(0, step));
+  if (sheetView.loaded && panel.dataset.panel === 'sheet') {
+    const barSteps = timeline.barStarts[bar + 1] - timeline.barStarts[bar];
+    sheetView.setPlayhead(bar, (stepAtTime(timeline, t) - timeline.barStarts[bar]) / barSteps);
+  }
   const tempo = timeline.tempo.length > 1 ? ` · ♩=${Math.round(bpmAtStep(timeline, Math.max(0, step)))}` : '';
   positionEl.textContent = `${bar + 1}마디 ${Math.floor(offset / score.stepsPerBeat) + 1}박${tempo}`;
 
@@ -482,6 +498,7 @@ try {
 void selectKit(savedKit ?? DEFAULT_KIT);
 void samplesDialog.restore();
 // 휴대폰·태블릿은 처음에 드럼 패드를 보여 준다
+// 악보 보기는 PDF를 연 뒤에만 쓸모가 있어서, 새로 열면 편집으로 시작한다
 showPanel(savedPanel === 'score' || savedPanel === 'pads' ? savedPanel : matchMedia('(pointer: coarse)').matches ? 'pads' : 'score');
 editor.render();
 scoreChanged();
