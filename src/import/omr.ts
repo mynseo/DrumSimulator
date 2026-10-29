@@ -215,10 +215,8 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     // 그림 악보는 드럼 악보만 있다고 보고 오선마다 타악기 음자리표를 붙인다
     glyph('', st.x0 + s, (st.top + st.bottom) / 2, s);
   }
-  for (const v of lineVerts) {
-    const x = PX((v.x0 + v.x1 + 1) / 2);
-    out.segments.push({ x1: x, y1: PY(v.y0), x2: x, y2: PY(v.y1 + 1), width: (v.x1 - v.x0 + 1) * kx });
-  }
+  // 세로선은 연습 표시 상자의 변을 빼고 맨 나중에 낸다 (아래 boxEdges)
+  const boxEdges = new Set<Vert>();
 
   const staveOf = (y: number) => {
     let best = staves[0];
@@ -287,8 +285,29 @@ export function recognizeImage(img: PageImage, debug = false): OmrResult {
     }
   }
 
-  // ---------- 4. 숫자: 여러 마디 쉼표 위의 마디 수, 빠르기(♩ = 130) ----------
+  // ---------- 4. 연습 표시 상자 ([Intro1]): 위아래 가로 변과 그 안의 글자는 악보 기호가 아니다 ----------
   const textBlobs = new Set<Blob>();
+  for (const a of blobs) {
+    const W = (a.x1 - a.x0 + 1) / s;
+    if (W < 2 || (a.y1 - a.y0 + 1) / s > 0.7) continue;
+    const { st, d } = staveOf((a.y0 + a.y1) / 2);
+    if (d === 0 || a.y1 > st.top) continue;
+    const b = blobs.find((o) => o !== a && Math.abs(o.x0 - a.x0) < 0.4 * s && Math.abs(o.x1 - a.x1) < 0.4 * s && o.y0 - a.y1 > s && o.y0 - a.y1 < 3 * s && (o.y1 - o.y0 + 1) / s <= 0.7);
+    if (!b) continue;
+    // 양옆 세로 변(둥근 모서리 상자는 위아래 변과 따로 떨어진다)
+    const sides = lineVerts.filter((v) => (Math.abs(v.x1 - a.x0) < 0.5 * s || Math.abs(v.x0 - a.x1) < 0.5 * s) && v.y0 >= a.y0 - 0.5 * s && v.y1 <= b.y1 + 0.5 * s);
+    if (sides.length < 2) continue;
+    for (const o of blobs) if (o.x0 >= a.x0 - 0.5 * s && o.x1 <= a.x1 + 0.5 * s && o.y0 >= a.y0 - 0.2 * s && o.y1 <= b.y1 + 0.2 * s) textBlobs.add(o);
+    for (const v of sides) boxEdges.add(v);
+  }
+
+  for (const v of lineVerts) {
+    if (boxEdges.has(v)) continue;
+    const x = PX((v.x0 + v.x1 + 1) / 2);
+    out.segments.push({ x1: x, y1: PY(v.y0), x2: x, y2: PY(v.y1 + 1), width: (v.x1 - v.x0 + 1) * kx });
+  }
+
+  // ---------- 5. 숫자: 여러 마디 쉼표 위의 마디 수, 빠르기(♩ = 130) ----------
   const text = (char: string, x0: number, x1: number, base: number, height: number) =>
     out.glyphs.push({ font: TEXT_FONT, char, x: PX(x0), y: PY(base), size: (height * ky) / 0.72, width: (x1 - x0 + 1) * kx });
   const digitOf = (b: Blob) => readDigit(b, w, label, blobs.indexOf(b));

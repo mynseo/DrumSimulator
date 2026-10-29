@@ -340,6 +340,20 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(new Set(score.notes.map((n) => n.mark))).toEqual(new Set(['x:9', 'black:5', 'black:1']));
   });
 
+  it('마디 위의 빠르기 표시가 바뀌면 그 마디부터 빠르기를 바꾼다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(300);
+    st.barline(560);
+    rockBar(st, 40, 300);
+    rockBar(st, 300, 560);
+    b.text('= 120', 60, st.top + 2 * S);
+    b.text('= 90', 320, st.top + 2 * S);
+    const { score } = readSheet([b.page()]);
+    expect(score.bpm).toBe(120);
+    expect(score.tempos).toEqual([{ step: 4 * score.stepsPerBeat, bpm: 90 }]);
+  });
+
   it('악보가 없는 PDF는 알려 준다', () => {
     expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/악보를 찾지 못했어요/);
   });

@@ -46,6 +46,13 @@ export interface Score {
   notes: ScoreNote[];
   /** 마디마다 박 수 (곡 중간에 박자가 바뀔 때만). 없으면 모든 마디가 beatsPerBar */
   barBeats?: number[];
+  /** 곡 중간에 바뀌는 빠르기 (그 칸부터). 처음 빠르기는 bpm */
+  tempos?: TempoChange[];
+}
+
+export interface TempoChange {
+  step: number;
+  bpm: number;
 }
 
 /** 타임라인에 올라간 한 번의 타격 (시간·손발 배정까지 끝난 상태). */
@@ -73,6 +80,8 @@ export interface Timeline {
   beatsPerBar: number;
   /** 마디 시작 칸 (마지막 원소 = 전체 칸 수) */
   barStarts: number[];
+  /** 빠르기 구간: step 칸(시각 time)부터 한 칸이 dur초. 빠르기가 한 번도 안 바뀌면 하나 */
+  tempo: { step: number; time: number; dur: number; bpm: number }[];
   hits: Hit[];
   byLimb: Record<Limb, Hit[]>;
   byPiece: Record<PieceId, Hit[]>;

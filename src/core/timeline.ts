@@ -38,19 +38,62 @@ export function barOfStep(starts: number[], step: number): { bar: number; offset
   return { bar: lo, offset: step - starts[lo] };
 }
 
+/** 빠르기 구간들 (중간에 빠르기가 바뀌면 여러 개) */
+export function tempoSegments(score: Score): Timeline['tempo'] {
+  const segs: Timeline['tempo'] = [{ step: 0, time: 0, dur: 60 / score.bpm / score.stepsPerBeat, bpm: score.bpm }];
+  for (const c of [...(score.tempos ?? [])].sort((a, b) => a.step - b.step)) {
+    if (!(c.bpm > 0) || c.step <= 0) continue;
+    const last = segs[segs.length - 1];
+    if (c.step === last.step) segs.pop();
+    const prev = segs[segs.length - 1];
+    segs.push({ step: c.step, time: prev ? prev.time + (c.step - prev.step) * prev.dur : 0, dur: 60 / c.bpm / score.stepsPerBeat, bpm: c.bpm });
+  }
+  return segs;
+}
+
+function segmentAt(tempo: Timeline['tempo'], key: 'step' | 'time', v: number) {
+  let lo = 0;
+  let hi = tempo.length - 1;
+  while (lo < hi) {
+    const m = (lo + hi + 1) >> 1;
+    if (tempo[m][key] <= v) lo = m;
+    else hi = m - 1;
+  }
+  return tempo[lo];
+}
+
+/** 칸 → 시각(초). 칸은 소수여도 된다 */
+export function timeAtStep(tl: Pick<Timeline, 'tempo'>, step: number): number {
+  const seg = segmentAt(tl.tempo, 'step', step);
+  return seg.time + (step - seg.step) * seg.dur;
+}
+
+/** 시각(초) → 칸 (소수) */
+export function stepAtTime(tl: Pick<Timeline, 'tempo'>, time: number): number {
+  const seg = segmentAt(tl.tempo, 'time', time);
+  return seg.step + (time - seg.time) / seg.dur;
+}
+
+/** 그 칸의 빠르기 */
+export function bpmAtStep(tl: Pick<Timeline, 'tempo'>, step: number): number {
+  return segmentAt(tl.tempo, 'step', step).bpm;
+}
+
 export function buildTimeline(score: Score): Timeline {
   const stepDuration = 60 / score.bpm / score.stepsPerBeat;
   const starts = barStarts(score);
   const totalSteps = starts[starts.length - 1];
+  const tempo = tempoSegments(score);
+  const timeOf = (step: number) => timeAtStep({ tempo }, step);
   const notes = score.notes
     .filter((n) => n.step >= 0 && n.step < totalSteps)
     .sort((a, b) => a.step - b.step || INSTRUMENT_ORDER[a.instrument] - INSTRUMENT_ORDER[b.instrument]);
 
-  const limbs = assignSticking(notes, stepDuration);
-  const rebound = applyDoubles(notes, limbs, stepDuration);
-  const duration = totalSteps * stepDuration;
+  const limbs = assignSticking(notes, timeOf);
+  const rebound = applyDoubles(notes, limbs, timeOf);
+  const duration = timeOf(totalSteps);
   const hits: Hit[] = notes.map((n, i) => ({
-    time: n.step * stepDuration,
+    time: timeOf(n.step),
     step: n.step,
     instrument: n.instrument,
     piece: INSTRUMENT_INFO[n.instrument].piece,
@@ -62,10 +105,10 @@ export function buildTimeline(score: Score): Timeline {
   }));
 
   // 플램: 본 음을 치는 손의 반대 손이 조금 먼저 약하게 친다. 그 손이 같은 순간 다른 것을 치고 있으면 못 친다
-  const gap = Math.min(FLAM_GAP, stepDuration * 0.45);
   notes.forEach((n, i) => {
     const limb = limbs[i];
     if (!n.flam || (limb !== 'RH' && limb !== 'LH')) return;
+    const gap = Math.min(FLAM_GAP, (timeOf(n.step + 1) - timeOf(n.step)) * 0.45);
     const other: Limb = limb === 'RH' ? 'LH' : 'RH';
     if (hits.some((h) => h.step === n.step && h.limb === other)) return;
     hits.push({
@@ -94,6 +137,7 @@ export function buildTimeline(score: Score): Timeline {
     stepsPerBeat: score.stepsPerBeat,
     beatsPerBar: score.beatsPerBar,
     barStarts: starts,
+    tempo,
     hits,
     byLimb,
     byPiece,

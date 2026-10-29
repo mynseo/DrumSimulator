@@ -2,7 +2,7 @@ import './style.css';
 import { customKit, DEFAULT_KIT, findKit, SOUND_KITS } from './audio/AudioEngine';
 import { Transport, type BackingTrack } from './audio/Transport';
 import { cloneScore, PRESETS } from './core/presets';
-import { barOfStep, buildTimeline, totalStepsOf } from './core/timeline';
+import { barOfStep, bpmAtStep, buildTimeline, stepAtTime, timeAtStep, totalStepsOf } from './core/timeline';
 import type { Score, Timeline } from './core/types';
 import { CHARACTERS } from './drummer/characters';
 import type { DrummerRig } from './drummer/DrummerRig';
@@ -138,7 +138,10 @@ $('stop').addEventListener('click', () => {
 transport.onEnded = updatePlayButton;
 
 bpmInput.addEventListener('change', () => {
+  const old = score.bpm;
   score.bpm = clampInt(bpmInput.value, 30, 300, score.bpm);
+  // 중간에 바뀌는 빠르기도 같은 비율로 (곡 전체를 빠르게·느리게)
+  if (score.tempos) score.tempos = score.tempos.map((c) => ({ ...c, bpm: Math.round(((c.bpm * score.bpm) / old) * 10) / 10 }));
   scoreChanged();
 });
 barsInput.addEventListener('change', () => {
@@ -340,7 +343,7 @@ pads.onHit = liveHit;
 
 /** 재생 중 친 음을 가장 가까운 칸에 넣는다 */
 function record(instrument: Instrument, velocity: number) {
-  const step = Math.round(transport.heardPosition / timeline.stepDuration) % timeline.totalSteps;
+  const step = Math.round(stepAtTime(timeline, transport.heardPosition % timeline.duration)) % timeline.totalSteps;
   const existing = score.notes.find((n) => n.step === step && n.instrument === instrument);
   if (existing) existing.velocity = Math.max(existing.velocity, velocity);
   else score.notes.push({ step, instrument, velocity });
@@ -383,7 +386,7 @@ panel.querySelectorAll<HTMLButtonElement>('.tabs [data-panel]').forEach((b) =>
 // ---- 편집기 ----
 editor.onChange = () => scoreChanged();
 editor.onSeek = (step) => {
-  transport.seek(step * timeline.stepDuration);
+  transport.seek(timeAtStep(timeline, step));
   pads.resetFollow();
 };
 
@@ -404,10 +407,11 @@ function frame(now: number) {
   kit.update(timeline, t, loop, liveMotion.kickPress, liveMotion.hatClosed, liveMotion.flashAges(live));
   if (transport.playing) pads.followScore(timeline, t, loop);
 
-  const step = Math.min(timeline.totalSteps - 1, Math.floor(t / timeline.stepDuration + 1e-6));
+  const step = Math.min(timeline.totalSteps - 1, Math.floor(stepAtTime(timeline, t) + 1e-6));
   editor.setPlayhead(transport.playing || t > 0 ? step : -1);
   const { bar, offset } = barOfStep(timeline.barStarts, Math.max(0, step));
-  positionEl.textContent = `${bar + 1}마디 ${Math.floor(offset / score.stepsPerBeat) + 1}박`;
+  const tempo = timeline.tempo.length > 1 ? ` · ♩=${Math.round(bpmAtStep(timeline, Math.max(0, step)))}` : '';
+  positionEl.textContent = `${bar + 1}마디 ${Math.floor(offset / score.stepsPerBeat) + 1}박${tempo}`;
 
   stage.render(dt);
   requestAnimationFrame(frame);
@@ -436,7 +440,8 @@ function validateScore(s: Score): Score {
     throw new Error('올바른 악보 파일이 아닙니다');
   }
   const barBeats = Array.isArray(s.barBeats) && s.barBeats.length === s.bars && s.barBeats.every((b) => b > 0 && b * s.stepsPerBeat === Math.round(b * s.stepsPerBeat)) ? s.barBeats : undefined;
-  return { version: 1, title: s.title ?? '악보', bpm: s.bpm, beatsPerBar: s.beatsPerBar ?? 4, stepsPerBeat: s.stepsPerBeat, bars: s.bars, notes: s.notes, ...(barBeats ? { barBeats } : {}) };
+  const tempos = Array.isArray(s.tempos) ? s.tempos.filter((c) => c && c.step > 0 && c.bpm > 0) : [];
+  return { version: 1, title: s.title ?? '악보', bpm: s.bpm, beatsPerBar: s.beatsPerBar ?? 4, stepsPerBeat: s.stepsPerBeat, bars: s.bars, notes: s.notes, ...(barBeats ? { barBeats } : {}), ...(tempos.length ? { tempos } : {}) };
 }
 
 function clampInt(v: string, min: number, max: number, fallback: number) {

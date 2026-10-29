@@ -31,7 +31,12 @@ const other = (h: Hand): Hand => (h === 'R' ? 'L' : 'R');
  * @param notes step 순으로 정렬된 음 목록
  * @returns 입력 배열과 같은 순서의 손발 배정
  */
-export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb | null)[] {
+/** 칸 → 시각. 숫자면 한 칸의 길이(초), 함수면 빠르기가 바뀌는 곡의 칸별 시각 */
+export type StepTime = number | ((step: number) => number);
+const timeFn = (t: StepTime) => (typeof t === 'number' ? (step: number) => step * t : t);
+
+export function assignSticking(notes: ScoreNote[], stepTime: StepTime): (Limb | null)[] {
+  const timeOf = timeFn(stepTime);
   const result: (Limb | null)[] = new Array(notes.length).fill(null);
   const state: Record<Hand, HandState> = {
     R: { time: -Infinity, lateral: INSTRUMENT_INFO.hihatClosed.lateral },
@@ -47,7 +52,7 @@ export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb 
   let i = 0;
   while (i < notes.length) {
     const step = notes[i].step;
-    const time = step * stepDuration;
+    const time = timeOf(step);
     const group: number[] = [];
     while (i < notes.length && notes[i].step === step) group.push(i++);
 
@@ -102,7 +107,7 @@ export function assignSticking(notes: ScoreNote[], stepDuration: number): (Limb 
         hand = available[0];
       } else {
         // 오른손이 곧 하이햇·라이드를 또 쳐야 하면(박자 유지 중), 사이의 음은 왼손이 맡는다
-        const rightBusy = !INSTRUMENT_INFO[notes[idx].instrument].timekeeper && timekeeperSoon(notes, i, time, stepDuration);
+        const rightBusy = !INSTRUMENT_INFO[notes[idx].instrument].timekeeper && timekeeperSoon(notes, i, time, timeOf);
         hand = cheaperHand(notes[idx], time, state, lastSingle, rightBusy);
         // 하이햇·라이드로 박자를 유지하는 것은 필인처럼 번갈아 치는 패시지가 아니다
         if (!INSTRUMENT_INFO[notes[idx].instrument].timekeeper) lastSingle = { hand, time };
@@ -124,7 +129,8 @@ export const DOUBLE_GAP = MIN_SAME_HAND_GAP / 2;
  * 손으로 치는 음이 한 칸에 하나씩 DOUBLE_GAP 이하 간격으로 4개 이상 이어진 구간만 바꾸고,
  * 사용자가 손을 지정했거나 플램이 섞인 구간은 그대로 둔다.
  */
-export function applyDoubles(notes: ScoreNote[], limbs: (Limb | null)[], stepDuration: number): boolean[] {
+export function applyDoubles(notes: ScoreNote[], limbs: (Limb | null)[], stepTime: StepTime): boolean[] {
+  const timeOf = timeFn(stepTime);
   const second = new Array(notes.length).fill(false);
   // 칸마다 손으로 치는 음 (한 칸에 손 음이 둘이면 롤이 아니다)
   const singles: number[] = [];
@@ -159,7 +165,7 @@ export function applyDoubles(notes: ScoreNote[], limbs: (Limb | null)[], stepDur
       continue;
     }
     const prev = run[run.length - 1];
-    if (prev !== undefined && (notes[k].step - notes[prev].step) * stepDuration > DOUBLE_GAP + 1e-9) flush();
+    if (prev !== undefined && timeOf(notes[k].step) - timeOf(notes[prev].step) > DOUBLE_GAP + 1e-9) flush();
     run.push(k);
   }
   flush();
@@ -170,9 +176,9 @@ export function applyDoubles(notes: ScoreNote[], limbs: (Limb | null)[], stepDur
 const RIGHT_BUSY_WINDOW = 0.2;
 
 /** 곧(RIGHT_BUSY_WINDOW 안에) 하이햇·라이드 음이 있는가 (notes는 step 순, from은 다음 묶음의 시작) */
-function timekeeperSoon(notes: ScoreNote[], from: number, time: number, stepDuration: number): boolean {
+function timekeeperSoon(notes: ScoreNote[], from: number, time: number, timeOf: (step: number) => number): boolean {
   for (let j = from; j < notes.length; j++) {
-    if (notes[j].step * stepDuration - time > RIGHT_BUSY_WINDOW) return false;
+    if (timeOf(notes[j].step) - time > RIGHT_BUSY_WINDOW) return false;
     if (INSTRUMENT_INFO[notes[j].instrument].timekeeper && !notes[j].hand) return true;
   }
   return false;

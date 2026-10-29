@@ -331,6 +331,8 @@ export interface MeasureMarks {
   dc: boolean;
   fine: boolean;
   volta: number[] | null;
+  /** 이 마디 위에 적힌 빠르기 (♩ = 190) */
+  tempo: number | null;
 }
 
 export interface ReadMeasure {
@@ -361,6 +363,7 @@ const emptyMarks = (): MeasureMarks => ({
   dc: false,
   fine: false,
   volta: null,
+  tempo: null,
 });
 
 interface StaffItems {
@@ -1211,6 +1214,9 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
         if (!mine(t.y)) continue;
         const str = t.str.replace(/\s+/g, ' ');
         const cx = (t.x + t.x1) / 2;
+        // 빠르기 표시 (♩ = 190): 곡 중간에 바뀌면 그 마디부터
+        const tempo = str.match(/=\s*(\d{2,3})(?!\d)/);
+        if (tempo && t.y > sysTop && Number(tempo[1]) >= 30 && Number(tempo[1]) <= 300) measureAt(t.x).marks.tempo = Number(tempo[1]);
         if (/to\s*coda/i.test(str)) measureAt(Math.min(cx, t.x1 - s0)).marks.toCoda = true;
         else if (/D\.\s?S\./i.test(str)) measureAt(t.x).marks.ds = true;
         else if (/D\.\s?C\./i.test(str)) measureAt(t.x).marks.dc = true;
@@ -1276,13 +1282,18 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
   const placed: { beat: number; instrument: Instrument; velocity: number; flam?: boolean; hand?: Hand; mark?: string }[] = [];
   let approximated = 0;
   const barBeats: number[] = [];
+  // 빠르기가 바뀌는 곳 (박 단위). 첫 마디의 빠르기는 곡의 빠르기
+  const tempoAt: { beat: number; bpm: number }[] = [];
   let barStart = 0;
-  order.forEach(({ m }) => {
+  order.forEach(({ m, slot }) => {
     if (m.approximate) approximated++;
     for (const n of m.notes) placed.push({ ...n, beat: barStart + n.beat });
+    const tempo = slots[slot].marks.tempo;
+    if (tempo && tempo !== (tempoAt[tempoAt.length - 1]?.bpm ?? (barStart === 0 ? null : bpm))) tempoAt.push({ beat: barStart, bpm: tempo });
     barBeats.push(m.meter);
     barStart += m.meter;
   });
+  if (tempoAt[0]?.beat === 0) bpm = tempoAt.shift()!.bpm;
   // 가장 많이 쓰인 박자가 곡의 박자. 다른 마디가 있으면 마디마다 박 수를 남긴다
   const counts = new Map<number, number>();
   for (const b of barBeats) counts.set(b, (counts.get(b) ?? 0) + 1);
@@ -1316,6 +1327,7 @@ export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): S
       bars: order.length,
       notes,
       ...(barBeats.some((b) => b !== mainMeter) ? { barBeats } : {}),
+      ...(tempoAt.length && bpm >= 30 && bpm <= 300 ? { tempos: tempoAt.map((c) => ({ step: Math.round(c.beat * stepsPerBeat), bpm: c.bpm })) } : {}),
     },
     writtenBars: uniq,
     approximated,

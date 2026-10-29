@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { nextHit, previousHit } from '../core/timeline';
+import { nextHit, previousHit, stepAtTime } from '../core/timeline';
 import type { Hit, PieceId, Timeline } from '../core/types';
 import { DrumKit } from '../scene/DrumKit';
 import { createPose, strokeHeight, type DrummerPose, type StickPose } from './pose';
@@ -28,9 +28,10 @@ export class MotionPlanner {
   constructor(private kit: DrumKit) {}
 
   compute(timeline: Timeline, t: number, loop: boolean, playing = false, now = performance.now() / 1000): DrummerPose {
-    const beatLen = timeline.stepDuration * timeline.stepsPerBeat;
-    this.pose.beat = playing ? (t / beatLen) % 1 : -1;
-    this.pose.beatIndex = playing ? Math.floor(t / beatLen) : 0;
+    // 박 위치는 칸으로 센다 (곡 중간에 빠르기가 바뀌어도 박에 맞춰 고개를 흔든다)
+    const beat = stepAtTime(timeline, t % (timeline.duration || 1)) / timeline.stepsPerBeat;
+    this.pose.beat = playing ? beat % 1 : -1;
+    this.pose.beatIndex = playing ? Math.floor(beat) : 0;
     this.pose.time = now;
 
     this.stick(this.pose.RH, 'RH', timeline, t, loop);

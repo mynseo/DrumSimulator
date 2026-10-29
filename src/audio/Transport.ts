@@ -1,3 +1,4 @@
+import { timeAtStep } from '../core/timeline';
 import type { Instrument, Timeline } from '../core/types';
 import { AudioEngine, DEFAULT_KIT, findKit } from './AudioEngine';
 
@@ -234,7 +235,7 @@ export class Transport {
 
   private schedule() {
     if (!this.ctx || !this.synth) return;
-    const { hits, duration, stepDuration, stepsPerBeat, barStarts } = this.timeline;
+    const { hits, duration, stepsPerBeat, barStarts, totalSteps } = this.timeline;
     const downbeats = new Set(barStarts);
     const now = this.ctx.currentTime - this.startTime;
     const until = now + LOOKAHEAD;
@@ -262,10 +263,9 @@ export class Transport {
         if (t >= from && t < until) this.synth.play(h.instrument, this.startTime + t, h.velocity);
       }
       if (this.metronome) {
-        const beatLen = stepDuration * stepsPerBeat;
-        const beats = Math.round(duration / beatLen);
-        for (let b = 0; b < beats; b++) {
-          const t = b * beatLen + offset;
+        // 박마다 (곡 중간에 빠르기가 바뀌어도 박 위치를 따라간다)
+        for (let b = 0; b * stepsPerBeat < totalSteps; b++) {
+          const t = timeAtStep(this.timeline, b * stepsPerBeat) + offset;
           if (t >= from && t < until) this.synth.click(this.startTime + t, downbeats.has(b * stepsPerBeat));
         }
       }
