@@ -208,7 +208,8 @@ function findStaves(segs: Segment[], page: number): Staff[] {
   for (let i = 0; i < long.length; i++) {
     if (used.has(i)) continue;
     const a = long[i];
-    const same = (l: { x0: number; x1: number }) => Math.abs(l.x0 - a.x0) < 2 && Math.abs(l.x1 - a.x1) < 2;
+    // 맨 위·아래 줄이 줄 첫머리의 괄호 끝과 이어져 조금 더 길게 그려진 악보도 있다
+    const same = (l: { x0: number; x1: number }) => Math.abs(l.x0 - a.x0) < 4 && Math.abs(l.x1 - a.x1) < 4;
     const run = [i];
     for (let j = i + 1; j < long.length && run.length < 5; j++) {
       if (used.has(j) || !same(long[j])) continue;

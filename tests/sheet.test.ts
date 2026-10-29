@@ -354,6 +354,18 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(score.tempos).toEqual([{ step: 4 * score.stepsPerBeat, bpm: 90 }]);
   });
 
+  it('맨 위·아래 줄만 왼쪽으로 조금 더 긴 오선도 찾는다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    // 줄 첫머리 괄호 끝과 이어져 위·아래 줄이 2.3pt 더 길게 그려진 악보 (악보바다 PDF)
+    b.line(37.7, st.top, 40, st.top);
+    b.line(37.7, st.bottom, 40, st.bottom);
+    st.barline(560);
+    rockBar(st, 40, 560);
+    const { score } = readSheet([b.page()]);
+    expect(at(score, 'snare')).toEqual([1, 3]);
+  });
+
   it('악보가 없는 PDF는 알려 준다', () => {
     expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/악보를 찾지 못했어요/);
   });
