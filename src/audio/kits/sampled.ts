@@ -69,9 +69,10 @@ const ACOUSTIC: Record<Instrument, SampledVoice> = {
   hihatClosed: { layers: [{ file: 'hihat-closed-soft', upTo: 0.6 }, { file: 'hihat-closed', upTo: 1 }], gain: 0.42 },
   hihatOpen: { layers: [{ file: 'hihat-open', upTo: 1 }], gain: 0.42 },
   hihatPedal: { layers: [{ file: 'hihat-pedal', upTo: 1 }], gain: 0.35 },
-  crash: { layers: [{ file: 'crash', upTo: 1 }], gain: 0.75 },
+  // 크래시는 드럼 세트 녹음(Karoryfer Swirly Drums, CC0). 살살 치면 부드러운 녹음
+  crash: { layers: [{ file: 'crash-soft', upTo: 0.6 }, { file: 'crash', upTo: 1 }], gain: 0.55 },
   // 같은 녹음을 조금 높게: 작고 밝은 크래시
-  crash2: { layers: [{ file: 'crash', upTo: 1 }], gain: 0.7, rate: 1.14 },
+  crash2: { layers: [{ file: 'crash-soft', upTo: 0.6 }, { file: 'crash', upTo: 1 }], gain: 0.5, rate: 1.12 },
   ride: { layers: [{ file: 'ride', upTo: 1 }], gain: 0.45 },
 };
 const RIDE_BELL = 'ride-bell';
@@ -84,6 +85,7 @@ const sampleLevel = (velocity: number) => 1.45 * level(velocity);
 /**
  * 실제로 녹음한 드럼 소리.
  * 출처: Versilian Community Sample Library (VCSL), CC0 1.0 — https://github.com/sgossner/VCSL
+ *       크래시: Karoryfer Swirly Drums, CC0 1.0 — https://github.com/sfzinstruments/karoryfer.swirly-drums
  * 원본을 다듬는 과정은 scripts/prepare_samples.py 참고.
  */
 export class AcousticKit implements SoundKit {

@@ -4,3 +4,7 @@ https://github.com/sgossner/VCSL
 
 They were trimmed, converted to mono, normalized and encoded as MP3 by
 scripts/prepare_samples.py in this repository.
+
+crash.mp3 and crash-soft.mp3 come from Karoryfer Swirly Drums by Karoryfer Samples,
+released under Creative Commons Zero (CC0 1.0, public domain).
+https://github.com/sfzinstruments/karoryfer.swirly-drums

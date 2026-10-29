@@ -197,5 +197,6 @@ pdf.js(약 1.7MB)는 PDF를 처음 열 때만 불러옵니다.
 
 ## 소리·모델 출처
 
-어쿠스틱 킷 샘플은 [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL)에서 가져왔습니다.
-CC0 1.0(퍼블릭 도메인)이라 출처 표시 없이 자유롭게 쓸 수 있습니다. 원본을 다듬은 방법은 `scripts/prepare_samples.py`에 있습니다.
+어쿠스틱 킷 샘플은 [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL)에서,
+크래시 심벌만 드럼 세트 녹음인 [Karoryfer Swirly Drums](https://github.com/sfzinstruments/karoryfer.swirly-drums)에서 가져왔습니다.
+둘 다 CC0 1.0(퍼블릭 도메인)이라 출처 표시 없이 자유롭게 쓸 수 있습니다. 원본을 다듬은 방법은 `scripts/prepare_samples.py`에 있습니다.
