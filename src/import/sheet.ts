@@ -1063,7 +1063,45 @@ function parseLabel(str: string): Label | null {
   return visits.length || ds ? { visits, ds } : null;
 }
 
-export function readSheet(pages: PageContent[], fallbackTitle = 'PDF 악보'): SheetResult {
+/** Mac Roman 0x80~0xFF (Finale Maestro 글꼴의 글자 자리) */
+const MAC_ROMAN_HIGH =
+  'ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»…\u00a0ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\uf8ffÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ';
+const macRoman = (b: number) => (b < 0x80 ? String.fromCharCode(b) : MAC_ROMAN_HIGH[b - 0x80]);
+
+/**
+ * 글꼴 이름이 지워진 PDF(CIDFont+F1 …)에서는 기호 글꼴의 글자가 원래 바이트 그대로 U+F0xx로 온다.
+ * 그런 글꼴은 글자들이 Maestro·MaestroPercussion 기호표에 얼마나 들어맞는지로 어느 글꼴인지 정해 이름과 글자를 되돌린다.
+ * 기호표에 거의 안 맞으면 보통 글씨(빠르기 숫자 등)로 보고 바이트를 글자로 바꾼다.
+ */
+function restoreAnonymousFonts(pages: PageContent[]): PageContent[] {
+  const chars = new Map<string, string[]>();
+  for (const p of pages) for (const g of p.glyphs) chars.set(g.font, [...(chars.get(g.font) ?? []), g.char]);
+  const raw = (c: string) => c.length === 1 && c >= '\uf020' && c <= '\uf0ff';
+  const decode = (c: string, table: Record<string, Sym>) => (table[c] ? c : macRoman(c.charCodeAt(0) - 0xf000));
+  const plan = new Map<string, { font: string | null; table: Record<string, Sym> | null }>();
+  for (const [font, cs] of chars) {
+    if (/maestro|bravura|leland|petaluma|sebastian|emmentaler|opus|engraver|finale|gootville|musejazz/i.test(font)) continue;
+    if (cs.filter(raw).length < cs.length * 0.8) continue;
+    const hits = (table: Record<string, Sym>) => cs.filter((c) => table[decode(c, table)]).length;
+    const xHeads = cs.some((c) => MAESTRO_PERC[decode(c, MAESTRO_PERC)]?.t === 'head' && !MAESTRO[decode(c, MAESTRO)]);
+    if (xHeads && hits(MAESTRO_PERC) >= cs.length * 0.5) plan.set(font, { font: 'MaestroPercussion', table: MAESTRO_PERC });
+    else if (hits(MAESTRO) >= cs.length * 0.5) plan.set(font, { font: 'Maestro', table: MAESTRO });
+    else plan.set(font, { font: null, table: null });
+  }
+  if (!plan.size) return pages;
+  return pages.map((p) => ({
+    ...p,
+    glyphs: p.glyphs.map((g) => {
+      const how = plan.get(g.font);
+      if (!how || !raw(g.char)) return g;
+      if (!how.table) return { ...g, char: macRoman(g.char.charCodeAt(0) - 0xf000) };
+      return { ...g, font: how.font!, char: decode(g.char, how.table) };
+    }),
+  }));
+}
+
+export function readSheet(input: PageContent[], fallbackTitle = 'PDF 악보'): SheetResult {
+  const pages = restoreAnonymousFonts(input);
   const warnings: string[] = [];
   let beatsPerBar = 4;
   /** 지금 읽고 있는 곳의 박자 (박자표를 만날 때마다 바뀐다) */

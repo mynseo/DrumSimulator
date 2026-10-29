@@ -366,6 +366,23 @@ describe('PDF 드럼 악보 읽기', () => {
     expect(at(score, 'snare')).toEqual([1, 3]);
   });
 
+  it('글꼴 이름이 지워진 Maestro 글꼴(글자가 U+F0xx로 오는 PDF)도 읽는다', () => {
+    const b = new PageBuilder();
+    const st = new Staff(b, 700);
+    st.barline(560);
+    rockBar(st, 40, 560);
+    // 같은 악보를 이름 없는 글꼴로: 기호 글꼴 글자를 원래 바이트(Mac Roman) 그대로 U+F000에 얹는다
+    const mac = 'ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»…\u00a0ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\uf8ffÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ';
+    const byte = (c: string) => (c.charCodeAt(0) < 0x80 ? c.charCodeAt(0) : c >= '\uf000' ? c.charCodeAt(0) - 0xf000 : 0x80 + mac.indexOf(c));
+    const page = b.page();
+    page.glyphs = page.glyphs.map((g) =>
+      /maestro/i.test(g.font) ? { ...g, font: /percussion/i.test(g.font) ? 'CIDFont+F3' : 'CIDFont+F1', char: String.fromCharCode(0xf000 + byte(g.char)) } : g,
+    );
+    const { score } = readSheet([page]);
+    expect(at(score, 'snare')).toEqual([1, 3]);
+    expect(at(score, 'hihatClosed')).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]);
+  });
+
   it('악보가 없는 PDF는 알려 준다', () => {
     expect(() => readSheet([{ width: 600, height: 840, glyphs: [], segments: [] }])).toThrow(/악보를 찾지 못했어요/);
   });
