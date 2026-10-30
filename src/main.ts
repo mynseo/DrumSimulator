@@ -22,6 +22,7 @@ import { instrumentForKey, PADS, Pads } from './ui/Pads';
 import { MarksDialog, savedMarkMap } from './ui/MarksDialog';
 import { SamplesDialog } from './ui/SamplesDialog';
 import { SheetView } from './ui/SheetView';
+import { parseYouTubeId, YouTubeSync } from './ui/YouTubeSync';
 import { applyMarkMap } from './core/marks';
 
 const STORAGE_KEY = 'drumsim.score.v1';
@@ -61,6 +62,11 @@ const pads = new Pads($('pads'));
 const sheetView = new SheetView($('sheet'));
 const liveMotion = new LiveMotion(kit);
 const liveSticking = new LiveSticking();
+const youtube = new YouTubeSync($('yt-box'), $('yt-player'), $<HTMLButtonElement>('yt-align'), $('yt-offset'), () => ({
+  position: transport.position,
+  playing: transport.playing,
+  bpm: score.bpm,
+}));
 
 let rig: DrummerRig | null = null;
 function setCharacter(id: string) {
@@ -99,8 +105,14 @@ function setScore(next: Score, backing: BackingTrack | null = null) {
   // PDF 악보 보기는 그 PDF를 연 동안만 (다른 곡을 열면 지운다. PDF는 아래에서 다시 채운다)
   sheetView.clear();
   transport.setBacking(backing);
-  $('backing-row').hidden = !backing;
   scoreChanged({ rerender: true });
+  youtube.songChanged(score.title, score.bpm);
+  showBackingRow();
+}
+
+/** 원곡 음량은 음원에서 뽑은 곡이나 유튜브를 연결했을 때만 */
+function showBackingRow() {
+  $('backing-row').hidden = !transport.hasBacking && !youtube.linked;
 }
 
 // ---- 툴바 ----
@@ -203,7 +215,11 @@ async function selectKit(id: string) {
 
 kitEdit.addEventListener('click', () => samplesDialog.open());
 $<HTMLInputElement>('volume').addEventListener('input', (e) => (transport.volume = Number((e.target as HTMLInputElement).value)));
-$<HTMLInputElement>('backing-volume').addEventListener('input', (e) => (transport.backingVolume = Number((e.target as HTMLInputElement).value)));
+$<HTMLInputElement>('backing-volume').addEventListener('input', (e) => {
+  const v = Number((e.target as HTMLInputElement).value);
+  transport.backingVolume = v;
+  youtube.volume = v;
+});
 
 presetSelect.innerHTML =
   '<option value=""></option><optgroup label="다른 곡">' + PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('') + '</optgroup>';
@@ -274,6 +290,40 @@ fileInput.addEventListener('change', async () => {
 const tabDialog = $<HTMLDialogElement>('tab-dialog');
 $('tab').addEventListener('click', () => tabDialog.showModal());
 
+// ---- 유튜브 원곡 ----
+const youtubeDialog = $<HTMLDialogElement>('youtube-dialog');
+const youtubeUrl = $<HTMLInputElement>('youtube-url');
+youtube.onMessage = (msg) => toast(msg, 4000);
+youtube.onChange = () => {
+  showBackingRow();
+  youtube.volume = Number($<HTMLInputElement>('backing-volume').value);
+};
+$('youtube').addEventListener('click', () => {
+  youtubeUrl.value = '';
+  youtubeDialog.showModal();
+});
+youtubeDialog.addEventListener('close', () => {
+  if (youtubeDialog.returnValue !== 'ok' || !youtubeUrl.value.trim()) return;
+  const id = parseYouTubeId(youtubeUrl.value);
+  if (!id) {
+    toast('유튜브 주소를 알아보지 못했어요');
+    return;
+  }
+  void youtube.link(id);
+  toast('영상을 연결했어요. 맞추기를 눌러 첫 박을 맞춰 주세요', 4000);
+});
+$('yt-align').addEventListener('click', () => {
+  // 맞추는 동안 악보는 멈춰 둔다 (악보의 지금 자리를 영상에서 찾는다)
+  if (!youtube.isAligning && transport.playing) {
+    transport.pause();
+    updatePlayButton();
+  }
+  youtube.toggleAlign();
+});
+$('yt-earlier').addEventListener('click', () => youtube.nudge(-0.05));
+$('yt-later').addEventListener('click', () => youtube.nudge(0.05));
+$('yt-close').addEventListener('click', () => youtube.unlink());
+
 // ---- 기호별 악기 ----
 const marksDialog = new MarksDialog($<HTMLDialogElement>('marks-dialog'), $('marks-list'), $<HTMLInputElement>('marks-remember'));
 marksDialog.onPreview = (instrument) => transport.playNow(instrument, 0.8);
@@ -320,7 +370,8 @@ window.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') {
     e.preventDefault();
-    togglePlay();
+    if (youtube.isAligning) youtube.toggleAlign();
+    else togglePlay();
     return;
   }
   const instrument = instrumentForKey(e.code);
@@ -422,6 +473,7 @@ function frame(now: number) {
   const step = Math.min(timeline.totalSteps - 1, Math.floor(stepAtTime(timeline, t) + 1e-6));
   editor.setPlayhead(transport.playing || t > 0 ? step : -1);
   const { bar, offset } = barOfStep(timeline.barStarts, Math.max(0, step));
+  youtube.update();
   if (sheetView.loaded && panel.dataset.panel === 'sheet') {
     const barSteps = timeline.barStarts[bar + 1] - timeline.barStarts[bar];
     sheetView.setPlayhead(bar, (stepAtTime(timeline, t) - timeline.barStarts[bar]) / barSteps);
@@ -502,4 +554,5 @@ void samplesDialog.restore();
 showPanel(savedPanel === 'score' || savedPanel === 'pads' ? savedPanel : matchMedia('(pointer: coarse)').matches ? 'pads' : 'score');
 editor.render();
 scoreChanged();
+youtube.songChanged(score.title, score.bpm);
 requestAnimationFrame(frame);

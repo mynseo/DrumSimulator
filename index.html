@@ -55,6 +55,7 @@
           <button id="tab" class="ghost">드럼 탭</button>
           <button id="export" class="ghost">저장</button>
           <button id="marks" class="ghost">기호별 악기</button>
+          <button id="youtube" class="ghost">유튜브 원곡</button>
         </div>
         <label class="row">마디 <input id="bars" type="number" min="1" max="256" step="1" /></label>
         <label class="row">박 나눔
@@ -81,6 +82,16 @@
         <div class="overlay top-left">
           <select id="preset" class="song" aria-label="곡"></select>
           <div id="position" class="position"></div>
+        </div>
+        <div id="yt-box" class="overlay bottom-left yt" hidden>
+          <div id="yt-player" class="yt-player"></div>
+          <div class="yt-bar">
+            <button id="yt-align" class="small">맞추기</button>
+            <button id="yt-earlier" class="icon small" aria-label="영상이 빠르면 당기기" title="영상이 드럼보다 빠르게 들리면 (0.05초)">◀</button>
+            <span id="yt-offset" class="yt-offset" title="악보 첫 자리에 맞춘 영상 시각"></span>
+            <button id="yt-later" class="icon small" aria-label="영상이 늦으면 밀기" title="영상이 드럼보다 늦게 들리면 (0.05초)">▶</button>
+            <button id="yt-close" class="icon small" aria-label="유튜브 닫기">×</button>
+          </div>
         </div>
         <div class="overlay bottom-right views">
           <button data-view="front">정면</button>
@@ -140,6 +151,17 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
         </div>
       </form>
     </dialog>
+    <dialog id="youtube-dialog">
+      <form method="dialog">
+        <h3>유튜브 원곡</h3>
+        <p class="hint">유튜브 영상을 악보와 함께 틀어요. 링크를 넣은 뒤 <b>맞추기</b>를 누르고, 악보 첫 박(또는 멈춰 둔 마디의 첫 박)이 들릴 때 <b>지금!</b>(또는 Space)을 누르면 박이 맞춰져요. 조금 어긋나면 ◀ ▶로 옮기세요. 빠르기를 바꾸면 영상도 같이 느려지거나 빨라져요.</p>
+        <input id="youtube-url" class="text" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
+        <div class="actions">
+          <button value="cancel" class="ghost">취소</button>
+          <button value="ok" class="primary">연결</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="help-dialog">
       <form method="dialog">
         <h3>사용법</h3>
@@ -148,6 +170,7 @@ B |o-------o-o-----|o-------o-o-----|</textarea>
           <ul class="help-list">
             <li><b>PDF 악보를 열면</b> 악보 그대로 보면서 지금 치는 마디·박을 따라가요</li>
             <li><b>마디 누르기</b> 그 마디로 이동</li>
+            <li><b>더보기 → 유튜브 원곡</b> 영상을 함께 틀기 · <b>맞추기</b> 누르고 첫 박에서 <b>지금!</b></li>
           </ul>
         </section>
         <section>
