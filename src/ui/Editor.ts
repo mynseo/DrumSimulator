@@ -198,7 +198,7 @@ export class Editor {
     this.sticking.clear();
     for (const h of timeline.hits) {
       if (h.grace) continue;
-      this.sticking.set(`${h.step}:${h.instrument}`, { limb: h.limb, forced: h.handForced });
+      this.sticking.set(`${h.step}:${h.written ?? h.instrument}`, { limb: h.limb, forced: h.handForced });
     }
     this.redecorate();
   }

@@ -69,6 +69,8 @@ export interface Hit {
   grace?: boolean;
   /** 더블 스트로크의 둘째 타: 손목을 다시 들지 않고 튕겨서 친다 (조금 약하다) */
   rebound?: boolean;
+  /** 악보에 적힌 악기가 instrument와 다를 때 (크래시를 상황에 따라 오른쪽 크래시로 친 경우) */
+  written?: Instrument;
 }
 
 export interface Timeline {

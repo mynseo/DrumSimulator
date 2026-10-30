@@ -1,6 +1,6 @@
 import { INSTRUMENT_INFO, INSTRUMENT_ORDER, PIECES, VELOCITY } from './instruments';
 import { applyDoubles, assignSticking } from './sticking';
-import { LIMBS, type Hit, type Limb, type PieceId, type Score, type Timeline } from './types';
+import { LIMBS, type Hit, type Instrument, type Limb, type PieceId, type Score, type ScoreNote, type Timeline } from './types';
 
 /** 플램의 꾸밈음이 본 음보다 먼저 나오는 시간(초). 실제 연주에서 20~40ms 정도 */
 export const FLAM_GAP = 0.03;
@@ -79,17 +79,77 @@ export function bpmAtStep(tl: Pick<Timeline, 'tempo'>, step: number): number {
   return segmentAt(tl.tempo, 'step', step).bpm;
 }
 
+/** 라이드로 박을 타는 구간인지 볼 앞뒤 범위(초) */
+const RIDE_WINDOW = 2.5;
+/** 크래시 직전 이 시간 안에 탐·스네어 단타가 이어졌으면 필인 끝 */
+const FILL_WINDOW = 1.2;
+/** 크래시 사이가 이보다 가까우면 같은 구간(한쪽 크래시로 이어 친다) */
+const CRASH_RUN_GAP = 0.9;
+
+/**
+ * 악보의 "크래시"를 왼쪽·오른쪽 중 어느 크래시로 칠지 정한다.
+ * - 하이햇 대신 라이드로 박을 타는 구간: 오른손이 라이드 쪽에 있으니 오른쪽 크래시
+ * - 필인(탐·스네어가 이어지는 구간)이 끝난 직후: 탐을 돌아 내려온 손이 닿기 좋은 오른쪽 크래시
+ * - 그 밖에는 왼쪽 크래시. 사용자가 왼손을 지정했거나, 같은 순간에 오른쪽 크래시가 이미 있으면 그대로
+ */
+export function crashSides(notes: ScoreNote[], timeOf: (step: number) => number): Instrument[] {
+  const times = notes.map((n) => timeOf(n.step));
+  const right = (i: number) => {
+    const n = notes[i];
+    const t = times[i];
+    let ride = 0;
+    let hat = 0;
+    const fill: Instrument[] = [];
+    let keeperInFill = false;
+    notes.forEach((o, j) => {
+      const dt = times[j] - t;
+      if (Math.abs(dt) <= RIDE_WINDOW && o.step !== n.step) {
+        if (o.instrument === 'ride') ride++;
+        else if (o.instrument === 'hihatClosed' || o.instrument === 'hihatOpen') hat++;
+      }
+      if (dt < 0 && dt >= -FILL_WINDOW && INSTRUMENT_INFO[o.instrument].kind === 'hand') {
+        if (INSTRUMENT_INFO[o.instrument].timekeeper || o.instrument === 'crash' || o.instrument === 'crash2') keeperInFill = true;
+        else fill.push(o.instrument);
+      }
+    });
+    const isFill = !keeperInFill && fill.length >= 3 && (fill.some((x) => x === 'tom1' || x === 'tom2' || x === 'floorTom') || fill.length >= 4);
+    return ride > hat || isFill;
+  };
+  // 크래시로 박을 타듯 이어 치는 구간은 한쪽 크래시로: 첫 크래시가 정한 쪽을 따른다
+  const out = notes.map((n) => n.instrument);
+  let side = false;
+  let last = -Infinity;
+  notes.forEach((n, i) => {
+    if (n.instrument !== 'crash') return;
+    if (times[i] - last > CRASH_RUN_GAP) side = right(i);
+    last = times[i];
+    const taken = notes.some((o) => o.step === n.step && o.instrument === 'crash2');
+    if (side && n.hand !== 'L' && !taken) out[i] = 'crash2';
+  });
+  return out;
+}
+
 export function buildTimeline(score: Score): Timeline {
   const stepDuration = 60 / score.bpm / score.stepsPerBeat;
   const starts = barStarts(score);
   const totalSteps = starts[starts.length - 1];
   const tempo = tempoSegments(score);
   const timeOf = (step: number) => timeAtStep({ tempo }, step);
-  const notes = score.notes
+  let notes = score.notes
     .filter((n) => n.step >= 0 && n.step < totalSteps)
     .sort((a, b) => a.step - b.step || INSTRUMENT_ORDER[a.instrument] - INSTRUMENT_ORDER[b.instrument]);
 
-  const limbs = assignSticking(notes, timeOf);
+  // 크래시는 상황에 맞는 쪽으로 (악보에 적힌 악기는 written에 남긴다)
+  const sides = crashSides(notes, timeOf);
+  const written = notes.map((n) => n.instrument);
+  notes = notes.map((n, i) => (sides[i] === n.instrument ? n : { ...n, instrument: sides[i] }));
+  let limbs = assignSticking(notes, timeOf, score.stepsPerBeat);
+  // 오른손이 아직 필인 끝을 치고 있어 왼손이 맡게 된 오른쪽 크래시는, 팔을 엇갈리지 않게 왼쪽 크래시로 친다
+  const crossed = notes.map((n, i) => n.instrument === 'crash2' && written[i] === 'crash' && limbs[i] === 'LH');
+  if (crossed.some(Boolean)) {
+    notes = notes.map((n, i) => (crossed[i] ? { ...n, instrument: 'crash' } : n));
+    limbs = assignSticking(notes, timeOf, score.stepsPerBeat);
+  }
   const rebound = applyDoubles(notes, limbs, timeOf);
   const duration = timeOf(totalSteps);
   const hits: Hit[] = notes.map((n, i) => ({
@@ -102,6 +162,7 @@ export function buildTimeline(score: Score): Timeline {
     velocity: rebound[i] ? n.velocity * 0.85 : n.velocity,
     handForced: !!n.hand,
     ...(rebound[i] ? { rebound: true } : {}),
+    ...(written[i] !== n.instrument ? { written: written[i] } : {}),
   }));
 
   // 플램: 본 음을 치는 손의 반대 손이 조금 먼저 약하게 친다. 그 손이 같은 순간 다른 것을 치고 있으면 못 친다

@@ -11,6 +11,10 @@ const ALTERNATE_WINDOW = 0.3;
 interface HandState {
   time: number;
   lateral: number;
+  /** 그 앞의 타 시각 (같은 손 세 번 연속을 피하려고) */
+  prev?: number;
+  /** 마지막 타가 하이햇·라이드였는지 (박 타기는 한 손 연타가 자연스럽다) */
+  keeper?: boolean;
 }
 
 const handLimb = (h: Hand): Limb => (h === 'R' ? 'RH' : 'LH');
@@ -35,7 +39,7 @@ const other = (h: Hand): Hand => (h === 'R' ? 'L' : 'R');
 export type StepTime = number | ((step: number) => number);
 const timeFn = (t: StepTime) => (typeof t === 'number' ? (step: number) => step * t : t);
 
-export function assignSticking(notes: ScoreNote[], stepTime: StepTime): (Limb | null)[] {
+export function assignSticking(notes: ScoreNote[], stepTime: StepTime, stepsPerBeat = 0): (Limb | null)[] {
   const timeOf = timeFn(stepTime);
   const result: (Limb | null)[] = new Array(notes.length).fill(null);
   const state: Record<Hand, HandState> = {
@@ -46,7 +50,8 @@ export function assignSticking(notes: ScoreNote[], stepTime: StepTime): (Limb | 
 
   const use = (h: Hand, idx: number, time: number) => {
     result[idx] = handLimb(h);
-    state[h] = { time, lateral: INSTRUMENT_INFO[notes[idx].instrument].lateral };
+    const info = INSTRUMENT_INFO[notes[idx].instrument];
+    state[h] = { time, lateral: info.lateral, prev: state[h].time, keeper: !!info.timekeeper };
   };
 
   let i = 0;
@@ -106,11 +111,15 @@ export function assignSticking(notes: ScoreNote[], stepTime: StepTime): (Limb | 
       if (available.length === 1) {
         hand = available[0];
       } else {
-        // 오른손이 곧 하이햇·라이드를 또 쳐야 하면(박자 유지 중), 사이의 음은 왼손이 맡는다
-        const rightBusy = !INSTRUMENT_INFO[notes[idx].instrument].timekeeper && timekeeperSoon(notes, i, time, timeOf);
-        hand = cheaperHand(notes[idx], time, state, lastSingle, rightBusy);
-        // 하이햇·라이드로 박자를 유지하는 것은 필인처럼 번갈아 치는 패시지가 아니다
-        if (!INSTRUMENT_INFO[notes[idx].instrument].timekeeper) lastSingle = { hand, time };
+        // 오른손이 곧 하이햇·라이드로 돌아가야 하면(박을 타는 중), 사이의 북은 왼손이 맡는다. 심벌(1박 크래시)은 오른손
+        const info = INSTRUMENT_INFO[notes[idx].instrument];
+        const rightBusy = !info.timekeeper && !info.cymbal && timekeeperSoon(notes, i, time, timeOf);
+        const onBeat = stepsPerBeat > 0 && step % stepsPerBeat === 0;
+        // 박 사이 홀수 자리(16분의 "e"·"a")에서 시작하는 프레이즈는 왼손으로 시작해야 박마다 오른손이 온다
+        const leadLeft = stepsPerBeat > 0 && stepsPerBeat % 2 === 0 && (step % stepsPerBeat) % 2 === 1;
+        hand = cheaperHand(notes[idx], time, state, lastSingle, rightBusy, onBeat, leadLeft);
+        // 하이햇·라이드·크래시로 박을 유지하는 것은 필인처럼 번갈아 치는 패시지가 아니다
+        if (!info.timekeeper && !info.cymbal) lastSingle = { hand, time };
       }
       use(hand, idx, time);
     }
@@ -172,8 +181,8 @@ export function applyDoubles(notes: ScoreNote[], limbs: (Limb | null)[], stepTim
   return second;
 }
 
-/** 오른손이 이 시간 안에 하이햇·라이드로 돌아가야 하면 "바쁘다"고 본다 */
-const RIGHT_BUSY_WINDOW = 0.2;
+/** 오른손이 이 시간 안에 하이햇·라이드로 돌아가야 하면 "바쁘다"고 본다 (8분 하이햇 사이의 백비트까지) */
+const RIGHT_BUSY_WINDOW = 0.45;
 
 /** 곧(RIGHT_BUSY_WINDOW 안에) 하이햇·라이드 음이 있는가 (notes는 step 순, from은 다음 묶음의 시작) */
 function timekeeperSoon(notes: ScoreNote[], from: number, time: number, timeOf: (step: number) => number): boolean {
@@ -190,18 +199,25 @@ function cheaperHand(
   state: Record<Hand, HandState>,
   lastSingle: { hand: Hand; time: number },
   rightBusy = false,
+  onBeat = false,
+  leadLeft = false,
 ): Hand {
   const info = INSTRUMENT_INFO[note.instrument];
   const cost = (h: Hand): number => {
     let c = 0;
     const gap = time - state[h].time;
     if (gap < MIN_SAME_HAND_GAP) c += 5 + (10 * (MIN_SAME_HAND_GAP - gap)) / MIN_SAME_HAND_GAP;
+    // 빠른 음을 한 손으로 세 번 연속(L L L)은 어색하다: 두 번까지만
+    else if (!info.timekeeper && !state[h].keeper && gap < 2 * MIN_SAME_HAND_GAP && state[h].time - (state[h].prev ?? -Infinity) < 2 * MIN_SAME_HAND_GAP) c += 2;
     // 이동 거리는 손이 최근에 친 위치에서만 의미가 있다
     if (gap < 1) c += Math.abs(info.lateral - state[h].lateral) * 1.5;
 
     const inPassage = time - lastSingle.time <= ALTERNATE_WINDOW;
-    if (inPassage && h === lastSingle.hand) c += 1.2;
-    if (!inPassage && h === 'L') c += 0.6; // 새 프레이즈는 오른손으로 시작
+    // 하이햇·라이드·크래시로 박을 타는 것은 번갈아 치는 패시지가 아니다 (한 손으로 이어 친다)
+    if (inPassage && h === lastSingle.hand && !info.timekeeper && !info.cymbal) c += 1.2;
+    if (!inPassage && h === (leadLeft ? 'R' : 'L')) c += 0.6; // 새 프레이즈는 박 자리에 오른손이 오도록 시작
+    // 필인은 박마다 오른손이 오게 (R L R L …): 박 자리는 오른손, 박 사이에서 오른손이 박을 놓치게 되면 바꾼다
+    if (inPassage && onBeat && h === 'L') c += 0.5;
 
     if (info.timekeeper && h === 'R') c -= 1.5;
     if (rightBusy && h === 'R') c += 1.5;

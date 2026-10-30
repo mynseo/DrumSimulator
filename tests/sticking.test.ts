@@ -117,4 +117,47 @@ describe('손발 배정', () => {
     const tl = buildTimeline({ ...score(notes, 140), stepsPerBeat: 8 });
     expect(tl.hits.some((h) => h.rebound)).toBe(false);
   });
+
+  it('8분 하이햇 사이의 백비트 스네어도 왼손, 하이햇은 계속 오른손', () => {
+    // 하이햇이 스네어와 같이 치지 않고 사이에만 있어도 오른손은 하이햇에 남는다
+    const tl = buildTimeline(score([n(0, 'hihatClosed'), n(2, 'hihatClosed'), n(4, 'snare'), n(6, 'hihatClosed'), n(8, 'hihatClosed'), n(10, 'hihatClosed'), n(12, 'snare'), n(14, 'hihatClosed')], 130));
+    for (const h of tl.hits) expect(h.limb).toBe(h.instrument === 'snare' ? 'LH' : 'RH');
+  });
+
+  it('필인은 박마다 오른손이 오게 친다', () => {
+    // 박 사이(16분 둘째)에서 시작해도 박 자리는 오른손
+    const tl = buildTimeline(score([1, 2, 3, 4, 5, 6, 7, 8].map((s) => n(s, s < 5 ? 'snare' : 'tom1')), 110));
+    for (const h of tl.hits) if (h.step % 4 === 0) expect(h.limb).toBe('RH');
+  });
 });
+
+describe('크래시 쪽 고르기', () => {
+  const crashAt = (tl: ReturnType<typeof buildTimeline>, step: number) => tl.hits.find((h) => h.step === step && (h.instrument === 'crash' || h.instrument === 'crash2'))!;
+
+  it('필인이 끝난 뒤의 크래시는 오른쪽 크래시', () => {
+    const fill = [8, 9, 10, 11, 12, 13, 14, 15].map((s) => n(s, s < 12 ? 'tom1' : 'floorTom'));
+    const tl = buildTimeline(score([...[0, 2, 4, 6].map((s) => n(s, 'hihatClosed')), ...fill, n(16, 'crash'), n(16, 'kick')], 110, 2));
+    const c = crashAt(tl, 16);
+    expect(c.instrument).toBe('crash2');
+    expect(c.limb).toBe('RH');
+    // 편집기에서는 악보에 적힌 크래시 칸에 손이 표시되도록 원래 악기를 남긴다
+    expect(c.written).toBe('crash');
+  });
+
+  it('라이드로 박을 타는 구간의 크래시는 오른쪽, 하이햇 구간은 왼쪽', () => {
+    const ride = buildTimeline(score([n(0, 'crash'), ...[2, 4, 6, 8, 10, 12, 14].map((s) => n(s, 'ride'))], 110));
+    expect(crashAt(ride, 0).instrument).toBe('crash2');
+    const hat = buildTimeline(score([n(0, 'crash'), ...[2, 4, 6, 8, 10, 12, 14].map((s) => n(s, 'hihatClosed'))], 110));
+    expect(crashAt(hat, 0).instrument).toBe('crash');
+  });
+
+  it('이어 치는 크래시는 한쪽 크래시로, 악보에 적힌 오른쪽 크래시는 그대로', () => {
+    const fill = [0, 1, 2, 3].map((s) => n(s, 'tom2'));
+    const tl = buildTimeline(score([...fill, ...[4, 6, 8, 10, 12, 14].map((s) => n(s, 'crash')), n(14, 'crash2')], 110));
+    const sides = tl.hits.filter((h) => h.step < 14 && (h.written === 'crash' || h.instrument === 'crash')).map((h) => h.instrument);
+    expect(new Set(sides)).toEqual(new Set(['crash2']));
+    // 같은 순간에 오른쪽 크래시가 이미 적혀 있으면 적힌 크래시는 왼쪽 그대로 (둘 다 친다)
+    expect(tl.hits.filter((h) => h.step === 14).map((h) => h.instrument).sort()).toEqual(['crash', 'crash2']);
+  });
+});
+
