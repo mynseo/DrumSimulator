@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>닫힘 버튼 연타 — 엘리베이터 문 빨리 닫기</title>
+<style>
+  :root {
+    --metal: #b9c0c7;
+    --metal-dark: #7d868f;
+    --panel: #2b2f35;
+    --accent: #ffcc33;
+    --bad: #ff5a5a;
+    --good: #4cd38a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: #1b1d21; color: #f2f2f2;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #app { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; }
+
+  /* 위쪽 정보 줄 */
+  #hud {
+    flex: none; display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; background: #111316; font-variant-numeric: tabular-nums; z-index: 5;
+  }
+  #hud .floor { font-family: ui-monospace, monospace; color: var(--bad); font-size: 22px; letter-spacing: 2px; }
+  #hud .stat { font-size: 15px; opacity: .85; }
+  #hud .stat b { font-size: 20px; color: var(--accent); }
+
+  /* 엘리베이터 안에서 문을 바라보는 장면 */
+  #stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; gap: 4vmin; padding: 3vmin; }
+  #car {
+    position: relative; height: min(70vh, 120vw); aspect-ratio: 3 / 4;
+    background: linear-gradient(90deg, #8d959d, #c9cfd5 30%, #c9cfd5 70%, #8d959d);
+    border-radius: 6px; padding: 5% 7% 0; box-shadow: inset 0 0 40px rgba(0,0,0,.5);
+  }
+  #doorway {
+    position: relative; width: 100%; height: 100%; overflow: hidden;
+    background: linear-gradient(#e9e2d0 0 62%, #a88d6a 62% 100%); /* 복도 벽과 바닥 */
+    border: 4px solid #5d656d; border-bottom: none;
+  }
+  #hall-light { position: absolute; left: 20%; right: 20%; top: 4%; height: 3%; background: #fff8dc; border-radius: 4px; box-shadow: 0 0 30px #fff3b0; }
+  #person {
+    position: absolute; left: 50%; bottom: 8%;
+    font-size: 40px; line-height: 1; transform-origin: 50% 100%;
+    transform: translateX(-50%) scale(.35);
+  }
+  #bubble {
+    position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); transform-origin: 50% 100%;
+    white-space: nowrap; background: #fff; color: #222; font-size: 12px; font-weight: 700;
+    padding: 3px 7px; border-radius: 8px; opacity: 0; transition: opacity .2s;
+  }
+  #bubble.show { opacity: 1; }
+  .door {
+    position: absolute; top: 0; bottom: 0; width: 50%;
+    background: linear-gradient(90deg, #9ba3ab, #d6dbe0 45%, #aab2ba);
+    transition: transform 90ms linear;
+    box-shadow: inset 0 0 12px rgba(0,0,0,.35);
+  }
+  .door.left { left: 0; border-right: 1px solid #6c737a; }
+  .door.right { right: 0; border-left: 1px solid #6c737a; }
+  #car.shake { animation: shake .25s; }
+  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+  /* 버튼 */
+  .panel {
+    background: var(--panel); border-radius: 10px; padding: 14px 12px;
+    display: grid; grid-template-columns: repeat(2, auto); gap: 10px; justify-items: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+  .panel .floorbtn {
+    width: 44px; height: 44px; border-radius: 50%; border: 2px solid #555b63;
+    background: #3a3f46; color: #aaa; font-size: 15px; display: grid; place-items: center;
+  }
+  .ebtn {
+    width: 76px; height: 76px; border-radius: 50%; border: 3px solid #9aa1a8;
+    background: radial-gradient(circle at 40% 35%, #f4f6f8, #b8bfc6);
+    color: #333; font-size: 22px; font-weight: 800; letter-spacing: -3px; cursor: pointer;
+    display: grid; place-items: center; padding: 0; touch-action: manipulation;
+    transition: transform 50ms, box-shadow 50ms; box-shadow: 0 3px 0 #5f666d;
+  }
+  .ebtn small { display: block; font-size: 10px; letter-spacing: 0; font-weight: 600; margin-top: -4px; }
+  .ebtn.pressed { transform: translateY(2px) scale(.96); box-shadow: 0 0 12px var(--accent); border-color: var(--accent); }
+  .ebtn.open { color: #2c5ea8; }
+  .ebtn:disabled { opacity: .5; cursor: default; }
+  .floating { position: absolute; z-index: 4; }
+
+  /* 시작·결과 화면 */
+  #overlay {
+    position: absolute; inset: 0; z-index: 10; background: rgba(10,12,15,.86);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  #overlay.hidden { display: none; }
+  .card { max-width: 420px; width: 100%; text-align: center; }
+  .card h1 { font-size: 26px; margin: 0 0 6px; }
+  .card h2 { font-size: 30px; margin: 0 0 8px; }
+  .card p { margin: 6px 0; line-height: 1.5; opacity: .9; }
+  .modes { display: grid; gap: 12px; margin-top: 18px; }
+  .mode {
+    border: 2px solid #3d434b; background: #262a30; color: inherit; border-radius: 12px;
+    padding: 14px; text-align: left; cursor: pointer; font: inherit;
+  }
+  .mode:hover { border-color: var(--accent); }
+  .mode b { font-size: 18px; }
+  .mode span { display: block; font-size: 13px; opacity: .75; margin-top: 4px; }
+  .mode .best { color: var(--accent); opacity: 1; }
+  .row { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+  .btn { border: none; border-radius: 10px; padding: 12px 18px; font: inherit; font-weight: 700; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: #222; }
+  .btn.ghost { background: #333941; color: #eee; }
+  #countdown { position: absolute; inset: 0; z-index: 9; display: grid; place-items: center; pointer-events: none; font-size: 22vmin; font-weight: 900; color: var(--accent); text-shadow: 0 6px 20px #000; }
+  .big { font-size: 40px; font-weight: 900; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .newbest { color: var(--good); font-weight: 800; }
+
+  @media (max-aspect-ratio: 4/5) {
+    #stage { flex-direction: column; }
+    #car { height: auto; width: min(80vw, 46vh); }
+    .panel { grid-template-columns: repeat(4, auto); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div class="floor" id="floor">▼ 1F</div>
+    <div class="stat">시간 <b id="time">0.00</b>s</div>
+    <div class="stat">닫힘 <b id="taps">0</b><span id="need"></span></div>
+  </div>
+
+  <div id="stage">
+    <div id="car">
+      <div id="doorway">
+        <div id="hall-light"></div>
+        <div id="person"><div id="bubble">잠깐만요~!</div>🏃</div>
+        <div class="door left" id="doorL"></div>
+        <div class="door right" id="doorR"></div>
+      </div>
+    </div>
+    <div class="panel" id="panel">
+      <div class="floorbtn">5</div><div class="floorbtn">6</div>
+      <div class="floorbtn">3</div><div class="floorbtn">4</div>
+      <button class="ebtn open" id="openBtn" aria-label="열림">◀▶<small>열림</small></button>
+      <button class="ebtn" id="closeBtn" aria-label="닫힘">▶◀<small>닫힘</small></button>
+    </div>
+  </div>
+
+  <div id="countdown"></div>
+  <div id="overlay"></div>
+</div>
+
+<script>
+(() => {
+  // 모드별 규칙: 닫힘을 몇 번 눌러야 문이 다 닫히는지, 상대가 문 앞까지 오는 데 걸리는 시간(초)
+  const MODES = {
+    fixed:  { name: '고정 버튼', taps: 30, arrive: 6.0, desc: '닫힘 버튼은 제자리. 손가락이 허락하는 한 최대한 빠르게 연타!' },
+    random: { name: '랜덤 버튼', taps: 15, arrive: 7.0, desc: '누를 때마다 닫힘 버튼이 다른 곳으로 도망갑니다. 같이 움직이는 열림 버튼은 누르면 문이 다시 열려요!' },
+  };
+  const OPEN_PENALTY = 3; // 열림 버튼을 잘못 누르면 되돌아가는 닫힘 횟수
+
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), panel = $('panel'), car = $('car');
+  const closeBtn = $('closeBtn'), openBtn = $('openBtn');
+  const doorL = $('doorL'), doorR = $('doorR');
+  const person = $('person'), bubble = $('bubble');
+  const overlay = $('overlay'), countdown = $('countdown');
+  const timeEl = $('time'), tapsEl = $('taps'), needEl = $('need'), floorEl = $('floor');
+
+  let mode = null;
+  let state = 'menu'; // menu | countdown | playing | done
+  let closed = 0, presses = 0, wrong = 0;
+  let startAt = 0, raf = 0, lastPos = null;
+
+  // ---- 소리 (Web Audio로 직접 만든 삑 소리와 딩동) ----
+  let ac = null;
+  function audio() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { ac = null; } }
+    if (ac && ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+  function beep(freq, dur = 0.05, vol = 0.15, type = 'square', delay = 0) {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime + delay;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(a.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  const ding = () => { beep(1318, 0.5, 0.2, 'sine'); beep(1046, 0.8, 0.2, 'sine', 0.35); };
+  const buzz = () => beep(110, 0.35, 0.2, 'sawtooth');
+
+  // ---- 기록 ----
+  const bestKey = (m) => `elevator-close-best-${m}`;
+  const getBest = (m) => { const v = parseFloat(localStorage.getItem(bestKey(m))); return Number.isFinite(v) ? v : null; };
+
+  // ---- 그리기 ----
+  function renderDoors() {
+    const p = Math.min(1, closed / mode.taps); // 0 = 활짝 열림, 1 = 다 닫힘
+    doorL.style.transform = `translateX(${-(1 - p) * 92}%)`;
+    doorR.style.transform = `translateX(${(1 - p) * 92}%)`;
+    tapsEl.textContent = closed;
+  }
+  function renderPerson(t) {
+    // t: 0(복도 끝) → 1(문 앞)
+    const s = 0.35 + t * 2.6;
+    const bob = Math.abs(Math.sin(t * 40)) * 6;
+    person.style.transform = `translateX(-50%) translateY(${-bob}px) scale(${s})`;
+    person.style.bottom = `${8 - t * 6}%`;
+    bubble.style.transform = `translateX(-50%) scale(${1 / s})`; // 말풍선은 사람 크기를 따라 커지지 않게
+    bubble.classList.toggle('show', t > 0.4);
+  }
+
+  function resetScene() {
+    closed = 0; presses = 0; wrong = 0; lastPos = null;
+    timeEl.textContent = '0.00';
+    needEl.textContent = mode ? ` / ${mode.taps}` : '';
+    floorEl.textContent = '▼ 1F';
+    person.style.display = '';
+    person.firstChild.nextSibling.textContent = '🏃';
+    bubble.textContent = '잠깐만요~!';
+    if (mode) renderDoors();
+    renderPerson(0);
+  }
+
+  // ---- 버튼 위치 ----
+  function dockButtons() {
+    for (const b of [openBtn, closeBtn]) {
+      b.classList.remove('floating');
+      b.style.left = b.style.top = '';
+    }
+    panel.appendChild(openBtn);
+    panel.appendChild(closeBtn);
+  }
+  function floatButtons() {
+    for (const b of [openBtn, closeBtn]) { b.classList.add('floating'); stage.appendChild(b); }
+    moveButtons();
+  }
+  function randomSpot(size, avoid) {
+    const r = stage.getBoundingClientRect();
+    const pad = 8, w = r.width - size - pad * 2, h = r.height - size - pad * 2;
+    let best = null;
+    for (let i = 0; i < 40; i++) {
+      const p = { x: pad + Math.random() * w, y: pad + Math.random() * h };
+      // 피해야 할 자리(직전 위치·다른 버튼)와 가장 멀리 떨어진 후보를 고른다
+      const d = Math.min(...avoid.map((a) => Math.hypot(a.x - p.x, a.y - p.y)), Infinity);
+      if (d > size * 1.6) return p;
+      if (!best || d > best.d) best = { ...p, d };
+    }
+    return best;
+  }
+  function place(btn, p) { btn.style.left = `${p.x}px`; btn.style.top = `${p.y}px`; }
+  function moveButtons() {
+    const size = closeBtn.offsetWidth || 76;
+    const c = randomSpot(size, lastPos ? [lastPos] : []);
+    place(closeBtn, c);
+    lastPos = c;
+    // 열림 버튼도 같이 옮겨 헷갈리게 하되 닫힘 버튼과 겹치지는 않게
+    const o = randomSpot(size, [c]);
+    place(openBtn, o);
+  }
+
+  // ---- 진행 ----
+  function flash(btn) {
+    btn.classList.add('pressed');
+    setTimeout(() => btn.classList.remove('pressed'), 70);
+  }
+  function onClose(e) {
+    e.preventDefault();
+    if (state !== 'playing') return;
+    presses++;
+    closed++;
+    beep(880 + closed * 12, 0.04);
+    flash(closeBtn);
+    renderDoors();
+    if (closed >= mode.taps) return finish(true);
+    if (mode === MODES.random) moveButtons();
+  }
+  function onOpen(e) {
+    e.preventDefault();
+    if (state !== 'playing') return;
+    wrong++;
+    closed = Math.max(0, closed - OPEN_PENALTY);
+    buzz();
+    flash(openBtn);
+    car.classList.remove('shake'); void car.offsetWidth; car.classList.add('shake');
+    renderDoors();
+    if (mode === MODES.random) moveButtons();
+  }
+  closeBtn.addEventListener('pointerdown', onClose);
+  openBtn.addEventListener('pointerdown', onOpen);
+  // 연타 중에 더블탭 확대나 길게 누르기 메뉴가 뜨지 않게
+  document.addEventListener('dblclick', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  function tick(now) {
+    const el = (now - startAt) / 1000;
+    timeEl.textContent = el.toFixed(2);
+    const t = Math.min(1, el / mode.arrive);
+    renderPerson(t);
+    if (t >= 1) return finish(false);
+    raf = requestAnimationFrame(tick);
+  }
+
+  function start(key) {
+    mode = MODES[key];
+    mode.key = key;
+    resetScene();
+    overlay.classList.add('hidden');
+    if (key === 'random') floatButtons(); else dockButtons();
+    closeBtn.disabled = openBtn.disabled = true;
+    state = 'countdown';
+    audio();
+    let n = 3;
+    const step = () => {
+      if (n > 0) { countdown.textContent = n; beep(660, 0.08, 0.12, 'sine'); n--; setTimeout(step, 600); return; }
+      countdown.textContent = '닫아!';
+      beep(1320, 0.12, 0.15, 'sine');
+      setTimeout(() => (countdown.textContent = ''), 400);
+      closeBtn.disabled = openBtn.disabled = false;
+      state = 'playing';
+      startAt = performance.now();
+      raf = requestAnimationFrame(tick);
+    };
+    step();
+  }
+
+  function finish(win) {
+    state = 'done';
+    cancelAnimationFrame(raf);
+    closeBtn.disabled = openBtn.disabled = true;
+    const el = (performance.now() - startAt) / 1000;
+    timeEl.textContent = el.toFixed(2);
+    let body;
+    if (win) {
+      ding();
+      floorEl.textContent = '▲ 2F';
+      bubble.textContent = '아…';
+      const prev = getBest(mode.key);
+      const isBest = prev === null || el < prev;
+      if (isBest) localStorage.setItem(bestKey(mode.key), el.toFixed(3));
+      const cps = presses / el;
+      body = `
+        <h2>🚪 문 닫힘!</h2>
+        <p>오늘도 혼자 탔습니다. 평화롭네요.</p>
+        <div class="big">${el.toFixed(2)}초</div>
+        <p>초당 ${cps.toFixed(1)}회 연타${wrong ? ` · 열림 실수 ${wrong}번` : ''}</p>
+        <p>${isBest ? '<span class="newbest">🏆 최고 기록!</span>' : `최고 기록 ${prev.toFixed(2)}초`}</p>`;
+    } else {
+      buzz();
+      person.firstChild.nextSibling.textContent = '🧍';
+      bubble.textContent = '감사합니다^^';
+      bubble.classList.add('show');
+      const pct = Math.round((closed / mode.taps) * 100);
+      closed = 0; renderDoors(); // 센서에 걸려 문이 다시 열린다
+      car.classList.remove('shake'); void car.offsetWidth; car.classList.add('shake');
+      body = `
+        <h2>😅 같이 타게 됐습니다…</h2>
+        <p>문이 ${pct}%쯤 닫혔을 때 손이 쑥 들어왔어요.</p>
+        <p>어색한 침묵 속에 2층까지 올라갑니다.</p>`;
+    }
+    setTimeout(() => {
+      overlay.innerHTML = `<div class="card">${body}
+        <div class="row">
+          <button class="btn primary" data-act="retry">다시 하기</button>
+          <button class="btn ghost" data-act="menu">모드 선택</button>
+        </div></div>`;
+      overlay.classList.remove('hidden');
+    }, win ? 700 : 900);
+  }
+
+  function showMenu() {
+    state = 'menu';
+    cancelAnimationFrame(raf);
+    mode = null;
+    dockButtons();
+    resetScene();
+    doorL.style.transform = 'translateX(-92%)';
+    doorR.style.transform = 'translateX(92%)';
+    tapsEl.textContent = '0';
+    const item = (key) => {
+      const m = MODES[key], b = getBest(key);
+      return `<button class="mode" data-mode="${key}">
+        <b>${key === 'fixed' ? '1' : '2'}. ${m.name}</b>
+        <span>${m.desc}</span>
+        <span>닫힘 ${m.taps}번 · 상대 도착까지 ${m.arrive}초 · <span class="best">${b === null ? '기록 없음' : `최고 ${b.toFixed(2)}초`}</span></span>
+      </button>`;
+    };
+    overlay.innerHTML = `<div class="card">
+      <h1>🛗 닫힘 버튼 연타</h1>
+      <p>엘리베이터에 나 혼자. 저 멀리서 누가 뛰어온다.<br>오기 전에 문을 닫아라!</p>
+      <div class="modes">${item('fixed')}${item('random')}</div>
+    </div>`;
+    overlay.classList.remove('hidden');
+  }
+
+  overlay.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-mode],[data-act]');
+    if (!t) return;
+    if (t.dataset.mode) start(t.dataset.mode);
+    else if (t.dataset.act === 'retry') start(mode.key);
+    else showMenu();
+  });
+  window.addEventListener('resize', () => { if (state === 'playing' && mode === MODES.random) moveButtons(); });
+
+  showMenu();
+})();
+</script>
+</body>
+</html>
