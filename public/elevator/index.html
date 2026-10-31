@@ -198,7 +198,9 @@
 
   // ---- 기록 ----
   const bestKey = (m) => `elevator-close-best-${m}`;
-  const getBest = (m) => { const v = parseFloat(localStorage.getItem(bestKey(m))); return Number.isFinite(v) ? v : null; };
+  // 저장소를 쓸 수 없는 환경(일부 내장 브라우저 등)에서도 게임은 그대로 돌아가게 한다
+  const getBest = (m) => { try { const v = parseFloat(localStorage.getItem(bestKey(m))); return Number.isFinite(v) ? v : null; } catch { return null; } };
+  const setBest = (m, v) => { try { localStorage.setItem(bestKey(m), v.toFixed(3)); } catch {} };
 
   // ---- 그리기 ----
   function renderDoors() {
@@ -344,7 +346,7 @@
       bubble.textContent = '아…';
       const prev = getBest(mode.key);
       const isBest = prev === null || el < prev;
-      if (isBest) localStorage.setItem(bestKey(mode.key), el.toFixed(3));
+      if (isBest) setBest(mode.key, el);
       const cps = presses / el;
       body = `
         <h2>🚪 문 닫힘!</h2>
