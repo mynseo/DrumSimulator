@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>템포 듣기 — 드럼 BPM 측정</title>
+    <meta name="description" content="드럼 치는 소리를 듣고 지금 몇 BPM인지, 어디서 빨라지고 느려졌는지 알려 주는 웹 도구. 설치 없이 마이크만 켜면 돼요." />
+    <meta name="theme-color" content="#101116" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="템포 듣기 — 드럼 BPM 측정" />
+    <meta property="og:description" content="드럼 치는 소리를 듣고 지금 몇 BPM인지, 어디서 빨라지고 느려졌는지 알려 줘요." />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>템포 듣기</h1>
+        <a href="./">드럼 시뮬레이터</a>
+      </header>
+
+      <section class="meter" id="meter" data-phase="off">
+        <p id="status" class="status" role="status">드럼 소리를 듣고 지금 빠르기를 알려 줘요</p>
+        <div class="readout">
+          <span id="hit" class="hit" aria-hidden="true"></span>
+          <span id="bpm" class="bpm">--</span>
+          <span class="unit">BPM</span>
+        </div>
+        <p id="delta" class="delta">&nbsp;</p>
+        <div class="level" aria-hidden="true"><div id="level"></div></div>
+        <div class="controls">
+          <button id="half" class="ghost" disabled title="두 배로 읽혔을 때 반으로">½×</button>
+          <button id="toggle" class="primary">측정 시작</button>
+          <button id="double" class="ghost" disabled title="절반으로 읽혔을 때 두 배로">2×</button>
+        </div>
+        <label class="target">
+          목표 템포
+          <input id="target" type="number" inputmode="numeric" min="30" max="300" step="1" placeholder="자동" />
+          <span class="hint">비워 두면 처음 친 빠르기가 기준이에요</span>
+        </label>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 id="graph-title">빠르기 흐름</h2>
+          <span id="graph-range" class="muted"></span>
+        </div>
+        <canvas id="graph" role="img" aria-label="시간에 따른 빠르기 그래프"></canvas>
+      </section>
+
+      <section id="report" class="card" hidden>
+        <div class="card-head">
+          <h2>이번 연습</h2>
+          <span id="report-time" class="muted"></span>
+        </div>
+        <div id="tiles" class="tiles"></div>
+        <div id="takes"></div>
+      </section>
+
+      <footer>
+        <p>소리는 이 기기 안에서만 분석하고 저장하거나 보내지 않아요.</p>
+        <p>숫자가 두 배나 절반으로 나오면 ½× · 2×로 바로잡으세요. 30–300 BPM을 읽어요.</p>
+      </footer>
+    </main>
+    <script type="module" src="./src/tempo/main.ts"></script>
+  </body>
+</html>
