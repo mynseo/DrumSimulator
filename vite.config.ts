@@ -5,6 +5,8 @@ export default defineConfig({
   base: './',
   build: {
     rollupOptions: {
+      // 드럼 시뮬레이터(index.html)와 템포 듣기(tempo.html) 두 페이지
+      input: { main: 'index.html', tempo: 'tempo.html' },
       output: {
         // three.js는 잘 바뀌지 않으므로 따로 묶어 브라우저 캐시를 살린다
         manualChunks: { three: ['three'] },
